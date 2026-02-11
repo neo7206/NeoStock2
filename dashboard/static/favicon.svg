@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f1729"/>
+      <stop offset="100%" stop-color="#1a2744"/>
+    </linearGradient>
+    <linearGradient id="nGrad" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="lineGrad" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- 背景 -->
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- N 字母 — 由上漲折線構成 -->
+  <path d="M16 48 L16 16 L48 48 L48 16"
+        fill="none" stroke="url(#nGrad)" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 上漲趨勢線 -->
+  <polyline points="10,44 22,38 32,42 42,28 54,14"
+            fill="none" stroke="url(#lineGrad)" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round"
+            filter="url(#glow)"/>
+  <!-- 箭頭 -->
+  <polygon points="54,14 48,18 51,21" fill="#ef4444" opacity="0.9"/>
+</svg>

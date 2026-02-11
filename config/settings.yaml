@@ -1,0 +1,26 @@
+account:
+  initial_capital: 1000000
+  available_cash: 1000000
+trading_costs:
+  stock_fee_rate: 0.001425
+  stock_fee_discount: 0.6
+  stock_tax_rate: 0.003
+  min_fee: 20
+risk_management:
+  max_single_position_pct: 0.25
+  max_daily_loss: 10000
+  default_stop_loss_pct: 0.05
+  default_take_profit_pct: 0.1
+  max_total_positions: 10
+strategy:
+  monitor_interval: 5
+  default_order_type: LMT
+  default_order_lot: Common
+database:
+  path: data/neostock2.db
+dashboard:
+  host: 127.0.0.1
+  port: 8080
+logging:
+  level: INFO
+  file: data/logs/neostock2.log
