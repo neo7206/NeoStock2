@@ -18,6 +18,7 @@ from sqlalchemy import (
     Boolean,
     Text,
     create_engine,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase
 
@@ -42,6 +43,7 @@ class Trade(Base):
     fee = Column(Float, default=0)  # 手續費
     tax = Column(Float, default=0)  # 證交稅
     net_amount = Column(Float, default=0)  # 淨金額 (含費用)
+    realized_pnl = Column(Float, default=None)  # 已實現損益（僅賣出時有值）
     strategy_name = Column(String(100), default="manual")  # 策略名稱
     status = Column(String(20), default="filled")
     note = Column(Text, default="")
@@ -60,6 +62,7 @@ class Trade(Base):
             "fee": self.fee,
             "tax": self.tax,
             "net_amount": self.net_amount,
+            "realized_pnl": self.realized_pnl,
             "strategy_name": self.strategy_name,
             "status": self.status,
             "note": self.note,
@@ -198,4 +201,40 @@ class Watchlist(Base):
             "name": self.name,
             "sort_order": self.sort_order,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class MarketData(Base):
+    """歷史行情資料 (K Bar)"""
+
+    __tablename__ = "market_data"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    datetime = Column(DateTime, nullable=False, index=True)
+    open = Column(Float, nullable=False)
+    high = Column(Float, nullable=False)
+    low = Column(Float, nullable=False)
+    close = Column(Float, nullable=False)
+    volume = Column(Integer, nullable=False)  # 成交量
+    amount = Column(Float, default=0)         # 成交金額
+    timeframe = Column(String(10), nullable=False, index=True)  # 1min, daily, etc.
+    
+    # 複合唯一鍵，避免重複資料
+    __table_args__ = (
+        UniqueConstraint('symbol', 'datetime', 'timeframe', name='uix_symbol_datetime_timeframe'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "symbol": self.symbol,
+            "datetime": self.datetime.isoformat() if self.datetime else None,
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume,
+            "amount": self.amount,
+            "timeframe": self.timeframe,
         }

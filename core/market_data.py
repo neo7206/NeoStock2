@@ -55,7 +55,7 @@ class MarketDataManager:
             self._handle_bidask(bidask)
 
         self._is_callback_set = True
-        logger.info("行情回呼已設定")
+        logger.debug("行情回呼已設定")
 
     def _update_quote(self, code: str, data: dict):
         """更新報價快取（Thread-safe）"""
@@ -149,7 +149,7 @@ class MarketDataManager:
         try:
             self.client.api.quote.subscribe(contract, quote_type=quote_type)
             self._subscribed_symbols.add(symbol)
-            logger.info(f"已訂閱 {symbol} ({quote_type})")
+            logger.debug(f"已訂閱 {symbol} ({quote_type})")
             return True
         except Exception as e:
             logger.error(f"訂閱失敗 ({symbol}): {e}")
@@ -161,7 +161,7 @@ class MarketDataManager:
             return
 
         # 1. 取得快照以建立基準資料（參考價、名稱等）
-        logger.info(f"正在初始化行情快取: {symbols}")
+        logger.debug(f"正在初始化行情快取: {symbols}")
         snapshots = self.get_snapshot(symbols)  # 這是舊的 API 呼叫，但只在初始化用一次
         
         with self._lock:
@@ -189,7 +189,7 @@ class MarketDataManager:
             # 只有當 tick 和 bidask 都取消時才從 set 移除？先簡化
             if quote_type == "tick": # 假設主要用 tick 判斷
                  self._subscribed_symbols.discard(symbol)
-            logger.info(f"已取消訂閱 {symbol} ({quote_type})")
+            logger.debug(f"已取消訂閱 {symbol} ({quote_type})")
             return True
         except Exception as e:
             logger.error(f"取消訂閱失敗 ({symbol}): {e}")

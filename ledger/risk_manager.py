@@ -31,9 +31,12 @@ class RiskManager:
         self.default_stop_loss_pct = self._risk_cfg.get("default_stop_loss_pct", 0.05)
         self.default_take_profit_pct = self._risk_cfg.get("default_take_profit_pct", 0.10)
         self.max_total_positions = self._risk_cfg.get("max_total_positions", 10)
+        self.max_single_amount = self._risk_cfg.get("max_single_amount", 0)  # 0 = 不限制
+        self.daily_loss_halt = self._risk_cfg.get("daily_loss_halt", True)
 
         self._daily_loss = 0
         self._daily_date = date.today().isoformat()
+        self._halted = False  # 每日虧損停機旗標
 
     def check_signal(self, signal, strategy_params: dict = None) -> tuple[bool, str]:
         """
@@ -59,6 +62,9 @@ class RiskManager:
             self._daily_date = today
 
         if self._daily_loss >= self.max_daily_loss:
+            if self.daily_loss_halt:
+                self._halted = True
+                logger.warning("🚨 每日虧損停機！禁止新開倉")
             return False, f"已達每日最大虧損限額 ({self.max_daily_loss:,.0f}元)"
 
         session = self.db.get_session()
@@ -198,8 +204,56 @@ class RiskManager:
         if today != self._daily_date:
             self._daily_loss = 0
             self._daily_date = today
+            self._halted = False  # 新的一天重置停機旗標
         if amount > 0:
             self._daily_loss += amount
+            # 檢查是否觸發停機
+            if self.daily_loss_halt and self._daily_loss >= self.max_daily_loss:
+                self._halted = True
+                logger.warning(f"🚨 每日虧損停機觸發！累計虧損: {self._daily_loss:,.0f} >= {self.max_daily_loss:,.0f}")
+
+    @property
+    def is_halted(self) -> bool:
+        """是否已停機"""
+        # 新的一天自動重置
+        if date.today().isoformat() != self._daily_date:
+            self._halted = False
+        return self._halted
+
+    def check_order_risk(self, symbol: str, action: str, quantity: int, price: float) -> tuple[bool, str]:
+        """
+        下單前快速風控檢查（不需要 Signal 物件）
+
+        Args:
+            symbol: 股票代碼
+            action: 'Buy' / 'Sell'
+            quantity: 張數
+            price: 價格
+
+        Returns:
+            (True/False, 原因)
+        """
+        # 停機檢查
+        if self.is_halted:
+            return False, "每日虧損已停機，禁止新下單"
+
+        if action == "Buy":
+            # 單筆金額限制
+            if self.max_single_amount > 0:
+                order_amount = price * quantity * 1000  # 張 → 股 → 金額
+                if order_amount > self.max_single_amount:
+                    return False, f"單筆金額 {order_amount:,.0f} 超過上限 {self.max_single_amount:,.0f}"
+
+            # 總持倉檔數檢查
+            session = self.db.get_session()
+            try:
+                pos_count = session.query(Position).count()
+                if pos_count >= self.max_total_positions:
+                    return False, f"帳戶總持倉檔數已達上限 ({self.max_total_positions})"
+            finally:
+                session.close()
+
+        return True, "通過風控檢查"
 
     def get_risk_summary(self, strategy_map: dict = None) -> dict:
         """取得風險摘要"""

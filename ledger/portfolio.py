@@ -30,15 +30,15 @@ class Portfolio:
         self._tax_rate = self._cost_cfg.get("stock_tax_rate", 0.003)
         self._min_fee = self._cost_cfg.get("min_fee", 20)
 
-    def calculate_fee(self, amount: float) -> float:
-        """計算手續費"""
+    def calculate_fee(self, amount: float) -> int:
+        """計算手續費（整數化）"""
         fee = amount * self._fee_rate * self._fee_discount
-        return max(fee, self._min_fee)
+        return round(max(fee, self._min_fee))
 
-    def calculate_tax(self, amount: float, action: str) -> float:
-        """計算證交稅（僅賣出時收）"""
+    def calculate_tax(self, amount: float, action: str) -> int:
+        """計算證交稅（僅賣出時收，整數化）"""
         if action == "Sell":
-            return amount * self._tax_rate
+            return round(amount * self._tax_rate)
         return 0
 
     def record_trade(
@@ -79,8 +79,19 @@ class Portfolio:
         else:
             net_amount = amount - fee - tax  # 賣出 = 收錢（正數）
 
+        # 計算賣出已實現損益（在下方 session 內統一處理）
+        realized_pnl = None
+
         session = self.db.get_session()
         try:
+            # 賣出時計算已實現損益（純看價差，不含手續費/稅）
+            if action == "Sell":
+                position = session.query(Position).filter_by(code=code).first()
+                if position and position.avg_cost > 0:
+                    realized_pnl = (price - position.avg_cost) * shares
+                else:
+                    realized_pnl = net_amount
+
             trade = Trade(
                 order_id=order_id,
                 code=code,
@@ -92,6 +103,7 @@ class Portfolio:
                 fee=fee,
                 tax=tax,
                 net_amount=net_amount,
+                realized_pnl=realized_pnl,
                 strategy_name=strategy_name,
                 note=note,
             )
@@ -100,10 +112,17 @@ class Portfolio:
             # 更新持倉
             self._update_position(session, code, action, price, quantity, name, strategy_name)
 
+            # 更新可用資金
+            from ledger.models import Account
+            account = session.query(Account).first()
+            if account:
+                account.available_cash += net_amount  # Buy=負數扣款, Sell=正數入帳
+
             session.commit()
+            pnl_info = f", 損益={realized_pnl:+,.0f}" if realized_pnl is not None else ""
             logger.info(
                 f"交易記錄: {action} {code} {quantity}張 @ {price}, "
-                f"費用={fee:.0f}, 稅={tax:.0f}, 淨額={net_amount:.0f}"
+                f"費用={fee:.0f}, 稅={tax:.0f}, 淨額={net_amount:.0f}{pnl_info}"
             )
             return trade
         except Exception as e:
@@ -129,21 +148,19 @@ class Portfolio:
         if action == "Buy":
             if position is None:
                 amount = price * quantity * 1000
-                fee = self.calculate_fee(amount)
                 position = Position(
                     code=code,
                     name=name,
                     quantity=quantity,
-                    avg_cost=price + fee / (quantity * 1000),
-                    total_cost=amount + fee,
+                    avg_cost=price,
+                    total_cost=amount,
                     strategy_name=strategy_name,
                 )
                 session.add(position)
             else:
                 old_total = position.avg_cost * position.quantity * 1000
                 new_amount = price * quantity * 1000
-                fee = self.calculate_fee(new_amount)
-                new_total = old_total + new_amount + fee
+                new_total = old_total + new_amount
                 new_qty = position.quantity + quantity
                 position.quantity = new_qty
                 position.avg_cost = new_total / (new_qty * 1000) if new_qty > 0 else 0
@@ -154,6 +171,12 @@ class Portfolio:
             if position is None:
                 logger.warning(f"賣出 {code} 但無持倉記錄")
                 return
+            # 防護：賣出數量不得超過持倉
+            if quantity > position.quantity:
+                logger.warning(
+                    f"賣出數量 {quantity} 超過持倉 {position.quantity}，自動調整"
+                )
+                quantity = position.quantity
             position.quantity -= quantity
             if position.quantity <= 0:
                 session.delete(position)
@@ -191,11 +214,24 @@ class Portfolio:
             session.close()
 
     def get_positions(self) -> list[dict]:
-        """取得所有持倉"""
+        """取得所有持倉（損益用 avg_cost 即時重算，不依賴 DB 舊值）"""
         session = self.db.get_session()
         try:
             positions = session.query(Position).all()
-            return [pos.to_dict() for pos in positions]
+            result = []
+            for pos in positions:
+                d = pos.to_dict()
+                # 用 avg_cost 重算 total_cost 和 unrealized_pnl（不含手續費）
+                recalc_cost = pos.avg_cost * pos.quantity * 1000
+                recalc_mv = pos.current_price * pos.quantity * 1000 if pos.current_price else 0
+                d["total_cost"] = recalc_cost
+                d["market_value"] = recalc_mv
+                d["unrealized_pnl"] = recalc_mv - recalc_cost
+                d["unrealized_pnl_pct"] = (
+                    (d["unrealized_pnl"] / recalc_cost * 100) if recalc_cost > 0 else 0
+                )
+                result.append(d)
+            return result
         finally:
             session.close()
 
@@ -211,33 +247,74 @@ class Portfolio:
         finally:
             session.close()
 
+    def delete_all_trades(self):
+        """清除所有交易記錄"""
+        session = self.db.get_session()
+        try:
+            session.query(Trade).delete()
+            session.commit()
+            logger.info("已清除所有交易記錄")
+        except Exception as e:
+            session.rollback()
+            logger.error(f"清除交易記錄失敗: {e}")
+            raise
+        finally:
+            session.close()
+
     def get_portfolio_summary(self) -> dict:
         """
         取得帳戶總覽
-
+        
         Returns:
             包含總資產、持倉市值、未實現/已實現損益等
         """
+        # 嘗試取得即時行情以計算最新市值
+        from dashboard.state import app_state
+        market_data = app_state.get("market_data")
+        
         session = self.db.get_session()
         try:
             positions = session.query(Position).all()
+            
+            total_cost = 0
+            total_market_value = 0
+            total_unrealized_pnl = 0
+            
+            for p in positions:
+                # 取得即時報價
+                current_price = 0
+                if market_data:
+                    tick = market_data.get_latest_tick(p.code)
+                    if tick:
+                        current_price = tick.get("close", 0)
+                    else:
+                        # 嘗試從 quote cache 拿 (可能有些沒訂閱 tick 但有 snapshot)
+                        quotes = market_data.get_latest_quotes([p.code])
+                        if quotes:
+                            current_price = quotes[0].get("close", 0)
+                
+                # 若無即時報價，回退使用儲存的 current_price (可能是上次同步的)
+                if current_price <= 0:
+                    current_price = p.current_price
+                
+                # 計算該持倉市值與損益
+                # quantity 是張數，所以 * 1000
+                mkt_val = current_price * p.quantity * 1000
+                cost = p.total_cost
+                unrealized = mkt_val - cost
+                
+                total_cost += cost
+                total_market_value += mkt_val
+                total_unrealized_pnl += unrealized
+                
+                # 這裡不寫回 DB Position table 以免頻繁 IO，僅作為顯示計算
+                # 但若有需要持久化，可考慮非同步更新
 
-            total_cost = sum(p.total_cost for p in positions)
-            total_market_value = sum(p.market_value for p in positions)
-            total_unrealized_pnl = sum(p.unrealized_pnl for p in positions)
-
-            # 計算已實現損益（所有賣出交易的淨額 + 對應買入的成本）
-            realized_pnl = (
-                session.query(func.sum(Trade.net_amount))
-                .filter(Trade.action == "Sell")
-                .scalar()
-                or 0
-            )
-            buy_total = (
-                session.query(func.sum(Trade.net_amount))
-                .filter(Trade.action == "Buy")
-                .scalar()
-                or 0
+            # 已實現損益：直接從 Trade.realized_pnl 欄位彙總
+            total_realized_pnl = (
+                session.query(func.sum(Trade.realized_pnl))
+                .filter(Trade.realized_pnl.isnot(None))
+                .scalar() or 0
             )
 
             total_fee = (
@@ -247,17 +324,18 @@ class Portfolio:
                 session.query(func.sum(Trade.tax)).scalar() or 0
             )
 
+            unrealized_pnl_pct = (
+                round(total_unrealized_pnl / total_cost * 100, 2)
+                if total_cost > 0 else 0
+            )
+
             return {
                 "position_count": len(positions),
                 "total_cost": round(total_cost, 2),
                 "total_market_value": round(total_market_value, 2),
                 "total_unrealized_pnl": round(total_unrealized_pnl, 2),
-                "total_unrealized_pnl_pct": (
-                    round(total_unrealized_pnl / total_cost * 100, 2)
-                    if total_cost > 0
-                    else 0
-                ),
-                "realized_pnl": round(realized_pnl + buy_total, 2),
+                "unrealized_pnl_pct": unrealized_pnl_pct,
+                "total_realized_pnl": round(total_realized_pnl, 2),
                 "total_fee": round(total_fee, 2),
                 "total_tax": round(total_tax, 2),
                 "total_costs": round(total_fee + total_tax, 2),
@@ -321,12 +399,11 @@ class Portfolio:
 
     def sync_from_broker(self, broker_positions: list[dict]):
         """
-        從券商端同步持倉至本地
+        從券商端同步持倉至本地（券商 = 唯一權威源）
 
-        以券商端為權威來源：
-        - 券商有、本地無 → 新增
-        - 券商有、本地有 → 更新數量
-        - 券商無、本地有 → 刪除
+        - Position 表直接覆蓋為券商數據
+        - Trade 表僅在該股票「完全無記錄」時才補寫 broker_sync
+        - 券商不存在的本地持倉 → 刪除
         """
         session = self.db.get_session()
         try:
@@ -338,35 +415,96 @@ class Portfolio:
                 code = bp.get("code", "")
                 qty = bp.get("quantity", 0)
                 price = bp.get("price", 0)
+                name = bp.get("name", "")
                 if not code or qty <= 0:
                     continue
 
                 broker_codes.add(code)
 
+                # 券商數據
+                last_price = bp.get("last_price", price)
+                pnl = bp.get("pnl", 0)
+                pnl_pct = bp.get("pnl_pct", 0)
+                market_value = bp.get("market_value", 0)
+                # total_cost 純成交金額，不含手續費
+                total_cost = price * qty * 1000
+
+                # --- 1. 覆蓋 Position 表 ---
                 if code in local_map:
-                    # 更新
                     pos = local_map[code]
+                    if name:
+                        pos.name = name
                     pos.quantity = qty
                     pos.avg_cost = price
-                    pos.total_cost = price * qty * 1000
+                    pos.total_cost = total_cost
+                    pos.current_price = last_price
+                    pos.market_value = market_value or (last_price * qty * 1000)
+                    pos.unrealized_pnl = pos.market_value - total_cost
+                    pos.unrealized_pnl_pct = (
+                        (pos.unrealized_pnl / total_cost * 100) if total_cost > 0 else 0
+                    )
                     pos.updated_at = datetime.now()
                 else:
-                    # 新增
+                    actual_mv = market_value or (last_price * qty * 1000)
+                    calc_pnl = actual_mv - total_cost
+                    calc_pnl_pct = (calc_pnl / total_cost * 100) if total_cost > 0 else 0
                     pos = Position(
                         code=code,
-                        name="",
+                        name=name,
                         quantity=qty,
                         avg_cost=price,
-                        total_cost=price * qty * 1000,
+                        total_cost=total_cost,
+                        current_price=last_price,
+                        market_value=actual_mv,
+                        unrealized_pnl=calc_pnl,
+                        unrealized_pnl_pct=calc_pnl_pct,
                         strategy_name="broker_sync",
                     )
                     session.add(pos)
 
-            # 刪除券商不存在的本地持倉
+                # --- 2. 僅首次（Trade 表無此股票記錄）才補寫 ---
+                has_trades = session.query(Trade).filter_by(code=code).count() > 0
+                if not has_trades:
+                    amount = price * qty * 1000
+                    fee = self.calculate_fee(amount)
+                    trade = Trade(
+                        order_id="",
+                        code=code,
+                        name=name,
+                        action="Buy",
+                        price=price,
+                        quantity=qty,
+                        amount=amount,
+                        fee=fee,
+                        tax=0,
+                        net_amount=-(amount + fee),
+                        realized_pnl=None,
+                        strategy_name="broker_sync",
+                        status="filled",
+                        note="券商庫存同步",
+                    )
+                    session.add(trade)
+                    logger.info(f"📥 首次同步: Buy {code} {name} {qty}張 @ {price}")
+
+            # --- 3. 刪除券商不存在的本地持倉 ---
             for code, pos in local_map.items():
                 if code not in broker_codes:
                     session.delete(pos)
                     logger.info(f"同步刪除本地持倉: {code}")
+
+            # --- 4. 自動將持倉股票加入 Watchlist ---
+            from ledger.models import Watchlist
+            existing_watchlist = {w.symbol for w in session.query(Watchlist).all()}
+            added_count = 0
+            for code in broker_codes:
+                if code not in existing_watchlist:
+                    # 取得名稱（從 broker_positions 或已存在的 Position）
+                    bp = next((b for b in broker_positions if b.get("code") == code), {})
+                    name = bp.get("name", "")
+                    session.add(Watchlist(symbol=code, name=name))
+                    added_count += 1
+            if added_count > 0:
+                logger.info(f"📋 自動加入 {added_count} 檔持倉到自選股清單")
 
             session.commit()
             logger.info(f"券商同步完成: {len(broker_codes)} 筆持倉")
@@ -376,3 +514,4 @@ class Portfolio:
             raise
         finally:
             session.close()
+

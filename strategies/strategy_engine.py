@@ -8,10 +8,13 @@ NeoStock2 策略 — 策略排程與執行引擎
 """
 
 import json
+import importlib
+import inspect
 import logging
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from strategies.base_strategy import BaseStrategy, Signal, SignalAction
@@ -22,13 +25,52 @@ from strategies.builtin.bollinger_band import BollingerBandStrategy
 
 logger = logging.getLogger("neostock2.strategies.strategy_engine")
 
-# 可用策略的註冊表
+# 可用策略的註冊表（內建 + 自動描掃）
 STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "sma_crossover": SMACrossoverStrategy,
     "rsi_reversal": RSIReversalStrategy,
     "macd_signal": MACDSignalStrategy,
     "bollinger_band": BollingerBandStrategy,
 }
+
+
+def _discover_strategies(search_dirs: list[str] = None) -> dict[str, type[BaseStrategy]]:
+    """
+    自動描掃目錄中繼承 BaseStrategy 的策略類別
+    
+    Args:
+        search_dirs: 要描掃的目錄列表，預設為 ['strategies/custom']
+    """
+    discovered = {}
+    if search_dirs is None:
+        search_dirs = ["strategies/custom"]
+    
+    for dir_path in search_dirs:
+        path = Path(dir_path)
+        if not path.exists():
+            continue
+        
+        for py_file in path.glob("*.py"):
+            if py_file.name.startswith("_"):
+                continue
+            
+            module_name = f"{dir_path.replace('/', '.')}.{py_file.stem}"
+            try:
+                module = importlib.import_module(module_name)
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    if issubclass(obj, BaseStrategy) and obj is not BaseStrategy:
+                        key = getattr(obj, "name", py_file.stem)
+                        if isinstance(key, str):
+                            key = key.lower().replace(" ", "_")
+                        discovered[key] = obj
+                        logger.info(f"🔍 發現自訂策略: {key} ({obj.__name__})")
+            except Exception as e:
+                logger.warning(f"載入策略 {py_file} 失敗: {e}")
+    
+    return discovered
+
+# 啟動時自動描掃 custom 目錄
+STRATEGY_REGISTRY.update(_discover_strategies())
 
 
 class StrategyEngine:
@@ -198,6 +240,24 @@ class StrategyEngine:
 
         # 執行下單
         if self.order_manager and signal.action != SignalAction.HOLD:
+            # === 賣出前檢查持倉 ===
+            if signal.action == SignalAction.SELL and self.portfolio:
+                positions = self.portfolio.get_positions()
+                held = next((p for p in positions if p["code"] == signal.symbol), None)
+                held_qty = held["quantity"] if held else 0
+                if held_qty <= 0:
+                    logger.warning(
+                        f"⚠️ 攔截賣出: {signal.symbol} 持倉為 0，無法賣出"
+                    )
+                    return
+                # 自動調整賣出數量不超過持倉
+                if signal.quantity > held_qty:
+                    logger.info(
+                        f"📉 調整賣出數量: {signal.symbol} "
+                        f"{signal.quantity}張 → {held_qty}張 (持倉上限)"
+                    )
+                    signal.quantity = held_qty
+
             # 取得策略設定的價格類型 (預設 LMT)
             order_type = strategy_params.get("order_type", "LMT")
             
@@ -210,16 +270,13 @@ class StrategyEngine:
             )
 
             if result.get("success"):
-                # 記錄到帳本
-                if self.portfolio:
-                    self.portfolio.record_trade(
-                        code=signal.symbol,
-                        action=signal.action.value,
-                        price=signal.price,
-                        quantity=signal.quantity,
-                        strategy_name=signal.strategy_name,
-                        order_id=result.get("order_id", ""),
-                    )
+                # 將策略名稱附加到 order 快取，供成交回呼用
+                order_id = result.get("order_id", "")
+                if order_id and hasattr(self.order_manager, '_orders'):
+                    with self.order_manager._lock:
+                        if order_id in self.order_manager._orders:
+                            self.order_manager._orders[order_id]["strategy_name"] = signal.strategy_name
+                logger.info(f"✅ 策略下單成功: {signal.symbol} {signal.action.value} {signal.quantity}張")
             else:
                 logger.error(f"下單失敗: {result.get('error', '未知錯誤')}")
 
@@ -268,3 +325,11 @@ class StrategyEngine:
                 "default_params": cls.default_params,
             })
         return result
+
+    @staticmethod
+    def reload_strategies() -> int:
+        """熱重載：重新描掃 custom 目錄並更新註冊表"""
+        new = _discover_strategies()
+        STRATEGY_REGISTRY.update(new)
+        logger.info(f"策略熱重載完成，目前共 {len(STRATEGY_REGISTRY)} 個策略")
+        return len(STRATEGY_REGISTRY)

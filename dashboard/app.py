@@ -20,7 +20,7 @@ logger = logging.getLogger("neostock2.dashboard")
 def create_app() -> FastAPI:
     """建立 FastAPI 應用"""
     # 延遲引入 routers，避免循環引入
-    from dashboard.routers import market, trading, ledger, strategy, settings
+    from dashboard.routers import market, trading, ledger, strategy, settings, history, research
 
     app = FastAPI(
         title="NeoStock2",
@@ -43,6 +43,8 @@ def create_app() -> FastAPI:
     app.include_router(ledger.router, prefix="/api/ledger", tags=["帳本"])
     app.include_router(strategy.router, prefix="/api/strategy", tags=["策略"])
     app.include_router(settings.router, prefix="/api/settings", tags=["設定"])
+    app.include_router(history.router, prefix="/api/history", tags=["歷史數據"])
+    app.include_router(research.router, prefix="/api/research", tags=["策略研究"])
 
     # 靜態檔案
     static_dir = Path(__file__).parent / "static"
@@ -56,6 +58,14 @@ def create_app() -> FastAPI:
         if template_path.exists():
             return template_path.read_text(encoding="utf-8")
         return "<h1>NeoStock2</h1><p>儀表板載入中...</p>"
+
+    # 策略研究獨立頁面
+    @app.get("/research", response_class=HTMLResponse)
+    async def research_page():
+        template_path = Path(__file__).parent / "templates" / "research.html"
+        if template_path.exists():
+            return template_path.read_text(encoding="utf-8")
+        return "<h1>策略研究</h1><p>頁面載入中...</p>"
 
     # 健康檢查
     @app.get("/api/health")

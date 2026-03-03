@@ -216,13 +216,45 @@ async def get_watchlist_quotes():
     # 回寫沒有名稱的自選股
     names_to_update = {}
     result = []
+    
+    # 取得持倉資訊以計算損益
+    portfolio = app_state.get("portfolio")
+    positions_map = {p["code"]: p for p in portfolio.get_positions()} if portfolio else {}
+
     for sym in symbols:
         snap = snap_map.get(sym, {})
         snap_name = snap.get("name") or ""
         db_name = name_map.get(sym, "")
         final_name = snap_name or db_name
+        
         if snap_name and not db_name:
             names_to_update[sym] = snap_name
+            
+        # 計算持倉相關數據
+        pos = positions_map.get(sym)
+        qty = pos["quantity"] if pos else 0
+        mkt_val = 0
+        pnl = 0
+        roi = 0
+        
+        close_price = snap.get("close")
+        if qty > 0 and close_price:
+            # 優先使用 Portfolio 內的即時運算數據 (如果有)
+            if pos and pos.get("market_value"):
+                 mkt_val = pos["market_value"]
+                 pnl = pos["unrealized_pnl"]
+                 roi = pos["unrealized_pnl_pct"]
+            else:
+                 # Fallback 計算
+                 mkt_val = int(qty * close_price * 1000) # 假設一張1000股 (注意: Ledger 內的 quantity 通常是張數，需確認)
+                 # 根據 portfolio.py: position.total_cost = position.avg_cost * position.quantity * 1000
+                 # 所以 quantity 是「張數」。
+                 # 簡易計算 PnL
+                 if pos:
+                     total_cost = pos.get("total_cost", 0)
+                     pnl = mkt_val - total_cost
+                     roi = (pnl / total_cost * 100) if total_cost > 0 else 0
+
         result.append({
             "symbol": sym,
             "name": final_name,
@@ -233,8 +265,14 @@ async def get_watchlist_quotes():
             "volume": snap.get("total_volume"),
             "change_price": snap.get("change_price"),
             "change_rate": snap.get("change_rate"),
-            "buy_price": snap.get("buy_price"),
-            "sell_price": snap.get("sell_price"),
+            # "buy_price": snap.get("buy_price"), # 移除
+            # "sell_price": snap.get("sell_price"), # 移除
+            
+            # 新增欄位
+            "qty": qty,
+            "market_value": mkt_val,
+            "pnl": pnl,
+            "roi": roi,
         })
 
     # 回寫缺少名稱的紀錄

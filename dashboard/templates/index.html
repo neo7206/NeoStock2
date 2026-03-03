@@ -70,6 +70,7 @@
             font-size: 18px;
             font-weight: 700;
             background: linear-gradient(135deg, var(--accent), var(--purple));
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -230,11 +231,11 @@
         }
 
         .stat-value.positive {
-            color: var(--green);
+            color: var(--red);
         }
 
         .stat-value.negative {
-            color: var(--red);
+            color: var(--green);
         }
 
         /* === 表格 === */
@@ -471,6 +472,12 @@
             transform: translateX(18px);
         }
 
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
         /* === 空狀態 === */
         .empty-state {
             text-align: center;
@@ -664,6 +671,7 @@
 
         /* Firefox */
         input[type=number] {
+            appearance: textfield;
             -moz-appearance: textfield;
         }
 
@@ -710,6 +718,15 @@
         .spinner-btn.down {
             border-radius: 0 0 4px 0;
         }
+
+        .bg-inventory {
+            background-color: rgba(30, 41, 59, 0.5);
+            /* Dark blue/slate tint */
+        }
+
+        .wl-table tbody tr:hover .bg-inventory {
+            background-color: rgba(30, 41, 59, 0.8);
+        }
     </style>
 </head>
 
@@ -732,7 +749,9 @@
         <button class="tab-btn" data-tab="strategies">🤖 策略</button>
 
         <button class="tab-btn" data-tab="watchlist">📈 自選股</button>
+        <button class="tab-btn" data-tab="history">📜 歷史數據</button>
         <button class="tab-btn" data-tab="settings">⚙️ 設定</button>
+        <button class="tab-btn" data-tab="research">🔬 策略研究</button>
     </div>
 
     <!-- 內容 -->
@@ -766,11 +785,6 @@
                 <div class="stat-card">
                     <div class="stat-label">ROI</div>
                     <div class="stat-value" id="roiPct">--</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">累計費用</div>
-                    <div class="stat-value" id="totalCosts">--</div>
-                    <div class="stat-sub" id="totalCostsDetail"></div>
                 </div>
             </div>
 
@@ -840,6 +854,7 @@
                                 <th>手續費</th>
                                 <th>稅</th>
                                 <th>淨額</th>
+                                <th>損益</th>
                                 <th>策略</th>
                             </tr>
                         </thead>
@@ -849,69 +864,144 @@
             </div>
         </div>
 
-        <!-- 策略 Tab -->
+        <!-- 策略 Tab：策略管控中心 -->
         <div class="tab-panel" id="tab-strategies">
-            <div class="card">
-                <div class="card-title">建立新策略</div>
-                <!-- 基本資訊 -->
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>名稱</label>
-                        <input id="sName" placeholder="我的策略">
+            <!-- 部署提示橫幅 -->
+            <div id="deployBanner"
+                style="display:none; margin-bottom:16px; padding:16px 20px; background:linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1)); border:1px solid var(--accent); border-radius:var(--radius); animation: fadeIn 0.3s ease;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div>
+                        <div style="font-size:14px; font-weight:700; color:var(--accent); margin-bottom:4px;">🔬
+                            研究推薦策略已帶入</div>
+                        <div style="font-size:12px; color:var(--text-secondary);" id="deployBannerText"></div>
                     </div>
-                    <div class="form-group">
-                        <label>類型</label>
-                        <select id="sType" onchange="onStrategyTypeChange()">
-                            <option value="sma_crossover">SMA 交叉</option>
-                            <option value="rsi_reversal">RSI 反轉</option>
-                            <option value="macd_signal">MACD 訊號</option>
-                            <option value="bollinger_band">布林通道</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>標的 (逗號分隔)</label>
-                        <input id="sSymbols" placeholder="2330,0050">
-                    </div>
-                </div>
-                <!-- 下單控制 -->
-                <div class="card-title" style="margin-top:8px;font-size:12px;color:var(--accent)">📦 下單控制</div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>每筆張數</label>
-                        <input id="sLotSize" type="number" value="1" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label>單標的上限 (張)</label>
-                        <input id="sMaxPosition" type="number" value="5" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label>價格類型</label>
-                        <select id="sPriceType">
-                            <option value="LMT">限價</option>
-                            <option value="MKT">市價</option>
-                        </select>
-                    </div>
-                </div>
-                <!-- 風控設定 -->
-                <div class="card-title" style="margin-top:8px;font-size:12px;color:var(--yellow)">🛡️ 風控設定</div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>停損 %</label>
-                        <input id="sStopLoss" type="number" step="0.5" value="5.0" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label>停利 %</label>
-                        <input id="sTakeProfit" type="number" step="0.5" value="10.0" min="0">
-                    </div>
-                </div>
-                <!-- 策略專屬參數（動態） -->
-                <div class="card-title" style="margin-top:8px;font-size:12px;color:var(--purple)">⚙️ 策略參數</div>
-                <div id="strategyParams"></div>
-                <div style="margin-top:16px">
-                    <button class="btn btn-primary" onclick="createStrategy()">建立策略</button>
+                    <button class="btn btn-primary" style="white-space:nowrap;" onclick="createStrategy()">✅
+                        確認建立</button>
                 </div>
             </div>
-            <div class="strategy-cards" id="strategyCards"></div>
+
+            <!-- 快速建立策略 -->
+            <div class="card">
+                <div class="card-title" id="formTitle">➕ 快速建立策略</div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1.5;">
+                        <label>策略名稱</label>
+                        <input id="sName" placeholder="例：SMA_2330" style="width:100%;">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>策略類型</label>
+                        <select id="sType" onchange="onStrategyTypeChange()">
+                            <option value="sma_crossover">📈 SMA 交叉</option>
+                            <option value="rsi_reversal">📉 RSI 反轉</option>
+                            <option value="macd_signal">📊 MACD 訊號</option>
+                            <option value="bollinger_band">🎯 布林通道</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>標的 (逗號分隔)</label>
+                        <input id="sSymbols" placeholder="2330,0050" style="width:100%;">
+                    </div>
+                </div>
+
+                <!-- 策略參數 + 下單風控 -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:8px;">
+                    <div>
+                        <div
+                            style="font-size:11px; font-weight:600; color:var(--purple); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+                            ⚙️ 策略參數</div>
+                        <div id="strategyParams"></div>
+                    </div>
+                    <div>
+                        <div
+                            style="font-size:11px; font-weight:600; color:var(--yellow); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+                            🛡️ 下單與風控</div>
+                        <div class="form-row" style="margin-bottom:8px;">
+                            <div class="form-group">
+                                <label>每筆張數</label>
+                                <input id="sLotSize" type="number" value="1" min="1" style="width:80px;">
+                            </div>
+                            <div class="form-group">
+                                <label>上限(張)</label>
+                                <input id="sMaxPosition" type="number" value="5" min="1" style="width:80px;">
+                            </div>
+                            <div class="form-group">
+                                <label>價格</label>
+                                <select id="sPriceType" style="width:80px;">
+                                    <option value="LMT">限價</option>
+                                    <option value="MKT">市價</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>停損 %</label>
+                                <input id="sStopLoss" type="number" step="0.5" value="5.0" min="0" style="width:80px;">
+                            </div>
+                            <div class="form-group">
+                                <label>停利 %</label>
+                                <input id="sTakeProfit" type="number" step="0.5" value="10.0" min="0"
+                                    style="width:80px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 研究分析 + 建立按鈕 -->
+                <hr style="margin: 16px 0; border: 0; border-top: 1px solid var(--border);">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <button class="btn btn-outline" onclick="runStrategyResearch()" id="btnResearch">🧬
+                            策略研究分析</button>
+                        <span style="font-size:11px; color:var(--text-muted);">增量更新資料 → Walk-Forward 分析 → 策略建議</span>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-outline" id="cancelEditBtn" onclick="cancelEdit()"
+                            style="display:none;">❌ 取消編輯</button>
+                        <button class="btn btn-primary" id="formActionBtn" onclick="createStrategy()">✅ 建立策略</button>
+                    </div>
+                </div>
+
+                <!-- 研究進度 -->
+                <div id="researchProgress" style="display:none; margin-top:12px;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                        <div class="spinner"
+                            style="width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation: spin 0.8s linear infinite;">
+                        </div>
+                        <span id="researchProgressText"
+                            style="font-size:12px; color:var(--text-secondary);">準備中...</span>
+                    </div>
+                    <div
+                        style="width:100%; height:6px; background:var(--bg-card-hover); border-radius:3px; overflow:hidden;">
+                        <div id="researchProgressBar"
+                            style="width:0%; height:100%; background:linear-gradient(90deg, var(--accent), var(--purple)); border-radius:3px; transition:width 0.3s;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 研究結果 -->
+                <div id="researchResults"
+                    style="display:none; margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
+                    <div class="card-title" style="font-size:13px">🔬 研究分析結果</div>
+                    <div id="researchResultsContent"></div>
+
+                    <!-- 策略調整建議 -->
+                    <div id="strategyAdvice"
+                        style="display:none; margin-top:16px; padding:16px; background:linear-gradient(135deg, rgba(59,130,246,0.06), rgba(139,92,246,0.06)); border:1px solid var(--border); border-radius:var(--radius);">
+                        <div style="font-size:14px; font-weight:700; margin-bottom:10px;">💡 策略調整建議</div>
+                        <div id="adviceContent" style="font-size:13px; color:var(--text-secondary); line-height:1.8;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 已建立策略列表 -->
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>🤖 已部署策略</span>
+                    <span style="font-size:11px; color:var(--text-muted);" id="strategyCount"></span>
+                </div>
+                <div id="strategyCards"></div>
+            </div>
         </div>
 
 
@@ -944,12 +1034,14 @@
                                 <th>成交</th>
                                 <th>漲跌</th>
                                 <th>漲幅%</th>
-                                <th>買價</th>
-                                <th>賣價</th>
                                 <th>開盤</th>
                                 <th>最高</th>
                                 <th>最低</th>
                                 <th>總量</th>
+                                <th class="bg-inventory">庫存</th>
+                                <th class="bg-inventory">市值</th>
+                                <th class="bg-inventory">損益</th>
+                                <th class="bg-inventory">報酬率</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -1016,23 +1108,55 @@
             </div>
         </div>
 
+        <!-- 歷史數據 Tab -->
+        <div class="tab-panel" id="tab-history">
+            <div class="card">
+                <div class="card-title">📜 歷史數據管理 (1分K)</div>
+                <div class="table-wrap">
+                    <table id="historyTable">
+                        <thead>
+                            <tr>
+                                <th>代碼</th>
+                                <th>名稱</th>
+                                <th>資料區間</th>
+                                <th>筆數</th>
+                                <th style="text-align: center;">動作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- 設定 Tab -->
         <div class="tab-panel" id="tab-settings">
             <div class="card">
-                <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+                <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>💰 帳戶資金設定</span>
-                    <div style="display:flex;gap:10px;align-items:center">
-                        <input id="setInitialCapital" type="number" class="form-control"
-                            style="width:120px;display:inline-block" placeholder="初始本金" title="初始本金">
-                        <input id="setAvailableCash" type="number" class="form-control"
-                            style="width:120px;display:inline-block" placeholder="可用現金" title="可用現金">
-                        <button class="btn btn-primary" onclick="saveAccountSettings()">儲存設定</button>
-                        <button class="btn btn-outline" onclick="syncAccount()">🔄 同步券商</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 13px;"
+                            onclick="saveAccountSettings()">儲存設定</button>
+                        <button class="btn btn-outline" style="padding: 4px 12px; font-size: 13px;"
+                            onclick="syncAccount()">🔄 同步券商</button>
+                        <button class="btn btn-red btn-outline" style="padding: 4px 12px; font-size: 13px;"
+                            onclick="clearTradeRecords()">🗑️ 清除記錄</button>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>初始本金</label>
+                        <input id="setInitialCapital" type="number" class="form-control" placeholder="初始本金">
+                    </div>
+                    <div class="form-group">
+                        <label>可用現金</label>
+                        <input id="setAvailableCash" type="number" class="form-control" placeholder="可用現金">
                     </div>
                 </div>
                 <div style="margin-top:8px; font-size:12px; color:var(--text-muted)">
                     * 調整「可用現金」將影響下單時的資金檢查與總資產計算。<br>
-                    * 調整「初始本金」將影響 ROI 投報率的計算基準。
+                    * 調整「初始本金」將影響 ROI 投報率的計算基準。<br>
+                    * 「清除記錄」僅刪除本地交易歷史，不影響券商端與持倉。
                 </div>
             </div>
 
@@ -1120,11 +1244,22 @@
                 </div>
             </div>
         </div>
+
+        <!-- 策略研究 Tab -->
+        <div class="tab-panel" id="tab-research">
+            <div class="card" style="padding:0; overflow:hidden; border:none; height: calc(100vh - 140px);">
+                <iframe id="researchFrame" style="width:100%; height:100%; border:none; background:var(--bg-primary);"
+                    loading="lazy"></iframe>
+            </div>
+        </div>
+
     </div>
 
     <script>
         // === Tab 切換 ===
         let watchlistTimer = null;
+        let historyTimer = null;
+        const fetchingSymbols = new Set();
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1132,8 +1267,11 @@
                 btn.classList.add('active');
                 document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
 
+
                 // 離開自選股 Tab 時停止刷新
                 if (watchlistTimer) { clearInterval(watchlistTimer); watchlistTimer = null; }
+                // 離開歷史數據 Tab 時停止刷新
+                if (typeof historyTimer !== 'undefined' && historyTimer) { clearInterval(historyTimer); historyTimer = null; }
 
                 const tab = btn.dataset.tab;
                 if (tab === 'overview') loadOverview();
@@ -1146,7 +1284,19 @@
                         watchlistTimer = setInterval(loadWatchlistQuotes, 1000);
                     }
                 }
+                else if (tab === 'history') {
+                    loadHistoryStatus();
+                    if (fetchingSymbols.size > 0) {
+                        startHistoryPolling();
+                    }
+                }
                 else if (tab === 'settings') loadAccountSettings();
+                else if (tab === 'research') {
+                    const rf = document.getElementById('researchFrame');
+                    if (!rf.src || rf.src === 'about:blank' || !rf.src.includes('/research')) {
+                        rf.src = '/research';
+                    }
+                }
             });
         });
 
@@ -1154,7 +1304,28 @@
         const fmt = (n) => n != null ? Number(n).toLocaleString('zh-TW') : '--';
         const fmtPct = (n) => n != null ? (n >= 0 ? '+' : '') + n.toFixed(2) + '%' : '--';
         const pnlClass = (n) => n > 0 ? 'positive' : n < 0 ? 'negative' : '';
-        const pnlBadge = (n) => n > 0 ? 'badge-green' : n < 0 ? 'badge-red' : 'badge-yellow';
+        const pnlBadge = (n) => n > 0 ? 'badge-red' : n < 0 ? 'badge-green' : 'badge-yellow';
+
+        // Toast 提示（非阻斷式）
+        function toast(msg, type = 'info', duration = 3000) {
+            let container = document.getElementById('toastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toastContainer';
+                container.style.cssText = 'position:fixed;top:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;';
+                document.body.appendChild(container);
+            }
+            const colors = { info: 'var(--accent)', success: 'var(--green)', error: 'var(--red)', warning: '#f59e0b' };
+            const el = document.createElement('div');
+            el.style.cssText = `padding:10px 18px;background:var(--bg-card);border:1px solid ${colors[type] || colors.info};border-left:4px solid ${colors[type] || colors.info};border-radius:var(--radius-sm);color:var(--text-primary);font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,0.3);opacity:0;transform:translateX(30px);transition:all 0.3s ease;max-width:350px;`;
+            el.textContent = msg;
+            container.appendChild(el);
+            requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateX(0)'; });
+            setTimeout(() => {
+                el.style.opacity = '0'; el.style.transform = 'translateX(30px)';
+                setTimeout(() => el.remove(), 300);
+            }, duration);
+        }
 
         async function api(path, opts = {}) {
             try {
@@ -1188,7 +1359,7 @@
                 if (document.getElementById('pnlValue') && d.total_pnl !== undefined) {
                     const pnl = fmt(d.total_pnl);
                     const pct = fmtPct(d.total_pnl_pct);
-                    const color = d.total_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                    const color = d.total_pnl >= 0 ? 'var(--red)' : 'var(--green)';
                     document.getElementById('pnlValue').innerHTML = `<span style="color:${color}">${pnl} (${pct})</span>`;
                 }
 
@@ -1232,15 +1403,21 @@
             }
         }
 
+        let _positionData = {};  // 快取持倉資料供展開使用
+
         async function loadPositions() {
             const res = await api('/ledger/positions');
             if (!res?.data?.length) {
                 document.getElementById('positionBody').innerHTML = '<tr><td colspan="8" class="empty-state">尚無持倉</td></tr>';
+                _positionData = {};
                 return;
             }
+            _positionData = {};
+            res.data.forEach(p => { _positionData[p.code] = p; });
+
             document.getElementById('positionBody').innerHTML = res.data.map(p => `
-            <tr>
-                <td><b>${p.code}</b></td><td>${p.name}</td><td>${p.quantity}</td>
+            <tr class="pos-row" style="cursor:pointer;" onclick="togglePositionDetail('${p.code}', this)" title="點擊展開買入明細">
+                <td><b>${p.code}</b> <span style="font-size:10px;color:var(--text-muted);">▶</span></td><td>${p.name || ''}</td><td>${p.quantity}</td>
                 <td>${fmt(p.avg_cost)}</td><td>${fmt(p.current_price)}</td><td>${fmt(p.market_value)}</td>
                 <td class="${pnlClass(p.unrealized_pnl)}">${fmt(p.unrealized_pnl)}</td>
                 <td><span class="badge ${pnlBadge(p.unrealized_pnl_pct)}">${fmtPct(p.unrealized_pnl_pct)}</span></td>
@@ -1248,13 +1425,116 @@
         `).join('');
         }
 
+        async function togglePositionDetail(code, rowEl) {
+            // 收合：移除已展開的明細列
+            const existing = document.querySelectorAll('.pos-detail-' + code);
+            if (existing.length) {
+                existing.forEach(el => el.remove());
+                rowEl.querySelector('span').textContent = '▶';
+                return;
+            }
+            rowEl.querySelector('span').textContent = '▼';
+
+            // 插入載入中提示列
+            const loadingRow = document.createElement('tr');
+            loadingRow.className = 'pos-detail-' + code;
+            loadingRow.innerHTML = '<td colspan="8" style="padding:6px 16px;font-size:12px;color:var(--text-muted);background:var(--bg-secondary);border-left:3px solid var(--accent);">📋 載入中...</td>';
+            rowEl.after(loadingRow);
+
+            let detailRows = [];
+
+            // 1) 券商 API
+            const res = await api('/trading/profit_loss?code=' + code);
+            const details = res?.data || [];
+            if (details.length) {
+                detailRows = details.map(d => ({
+                    date: d.date || '--', source: d.cond || '--', quantity: d.quantity,
+                    price: d.price, last_price: d.last_price,
+                    market_value: d.last_price * d.quantity * 1000,
+                    pnl: d.pnl, pnl_pct: d.pr_ratio,
+                }));
+            } else {
+                // 2) 本地交易記錄
+                const localRes = await api('/ledger/trades?code=' + code + '&limit=50');
+                const buyTrades = (localRes?.data || []).filter(t => t.action === 'Buy');
+                if (buyTrades.length) {
+                    const pos = _positionData[code] || {};
+                    const cp = pos.current_price || 0;
+                    detailRows = buyTrades.map(t => {
+                        const cost = t.amount || (t.price * t.quantity * 1000);
+                        const mv = cp * t.quantity * 1000;
+                        const pnl = cp > 0 ? mv - cost : null;
+                        return {
+                            date: t.created_at?.substring(0, 10) || '--', source: t.strategy_name || '--',
+                            quantity: t.quantity, price: t.price, last_price: cp,
+                            market_value: mv, pnl, pnl_pct: cost > 0 && pnl != null ? (pnl / cost * 100) : null
+                        };
+                    });
+                } else {
+                    // 3) 彙總回退
+                    const pos = _positionData[code];
+                    if (pos) {
+                        detailRows = [{
+                            date: '（彙總）', source: '券商同步', quantity: pos.quantity,
+                            price: pos.avg_cost, last_price: pos.current_price,
+                            market_value: pos.market_value, pnl: pos.unrealized_pnl, pnl_pct: pos.unrealized_pnl_pct
+                        }];
+                    }
+                }
+            }
+
+            loadingRow.remove();
+
+            if (!detailRows.length) {
+                const emptyRow = document.createElement('tr');
+                emptyRow.className = 'pos-detail-' + code;
+                emptyRow.innerHTML = '<td colspan="8" style="padding:6px 16px;font-size:12px;color:var(--text-muted);background:var(--bg-secondary);border-left:3px solid var(--accent);">暫無明細資料</td>';
+                rowEl.after(emptyRow);
+                return;
+            }
+
+            // 直接在主表格中插入明細 <tr>，欄位與主表格嚴格對齊
+            // 主表格: 代碼 | 名稱 | 張數 | 均價 | 現價 | 市值 | 損益 | 損益%
+            // 明細列: 日期 | 來源 | 張數 | 買入價 | 現價 | 市值 | 損益 | 報酬率
+            let insertAfter = rowEl;
+            detailRows.forEach(r => {
+                const pv = r.pnl;
+                const color = pv != null ? (pv >= 0 ? 'var(--red)' : 'var(--green)') : 'var(--text-muted)';
+                const pnlText = pv != null ? `${pv >= 0 ? '+' : ''}${fmt(Math.round(pv))}` : '--';
+                const pctText = r.pnl_pct != null ? `${r.pnl_pct >= 0 ? '+' : ''}${Number(r.pnl_pct).toFixed(2)}%` : '--';
+                const tr = document.createElement('tr');
+                tr.className = 'pos-detail-' + code;
+                tr.style.cssText = 'background:var(--bg-secondary);border-left:3px solid var(--accent);font-size:12px;';
+                tr.innerHTML = `
+                    <td style="color:var(--text-secondary);padding:4px 8px;">${r.date}</td>
+                    <td style="color:var(--text-muted);padding:4px 8px;">${r.source}</td>
+                    <td>${r.quantity}</td>
+                    <td>${fmt(r.price)}</td>
+                    <td>${r.last_price ? fmt(r.last_price) : '--'}</td>
+                    <td>${fmt(Math.round(r.market_value || 0))}</td>
+                    <td style="font-weight:600;color:${color};">${pnlText}</td>
+                    <td><span class="badge ${pv != null ? (pv >= 0 ? 'badge-red' : 'badge-green') : ''}" style="font-size:11px;">${pctText}</span></td>`;
+                insertAfter.after(tr);
+                insertAfter = tr;
+            });
+        }
+
         async function loadTrades() {
             const res = await api('/ledger/trades?limit=50');
             if (!res?.data?.length) {
-                document.getElementById('tradeBody').innerHTML = '<tr><td colspan="10" class="empty-state">尚無記錄</td></tr>';
+                document.getElementById('tradeBody').innerHTML = '<tr><td colspan="11" class="empty-state">尚無記錄</td></tr>';
                 return;
             }
-            document.getElementById('tradeBody').innerHTML = res.data.map(t => `
+            document.getElementById('tradeBody').innerHTML = res.data.map(t => {
+                // 計算損益顯示（僅賣出時有值）
+                let pnlCell = '<td>—</td>';
+                if (t.action === 'Sell' && t.realized_pnl !== null && t.realized_pnl !== undefined) {
+                    const pnl = t.realized_pnl;
+                    const pnlColor = pnl >= 0 ? 'var(--red)' : 'var(--green)';
+                    const sign = pnl >= 0 ? '+' : '';
+                    pnlCell = `<td style="font-weight:700; color:${pnlColor};">${sign}${fmt(pnl)}</td>`;
+                }
+                return `
             <tr>
                 <td>${t.created_at?.substring(0, 19) || '--'}</td>
                 <td><b>${t.code}</b></td>
@@ -1262,39 +1542,56 @@
                 <td>${fmt(t.price)}</td><td>${t.quantity}</td><td>${fmt(t.amount)}</td>
                 <td>${fmt(t.fee)}</td><td>${fmt(t.tax)}</td>
                 <td class="${pnlClass(t.net_amount)}">${fmt(t.net_amount)}</td>
+                ${pnlCell}
                 <td>${t.strategy_name}</td>
-            </tr>
-        `).join('');
+            </tr>`;
+            }).join('');
         }
 
         async function loadStrategies() {
             const res = await api('/strategy/list');
+            const countEl = document.getElementById('strategyCount');
             if (!res?.data?.length) {
-                document.getElementById('strategyCards').innerHTML = '<div class="empty-state"><div class="icon">🤖</div>尚無策略，請建立一個</div>';
+                document.getElementById('strategyCards').innerHTML = '<div class="empty-state"><div class="icon" style="font-size:36px; margin-bottom:8px;">🤖</div>尚無策略<br><span style="font-size:12px; color:var(--text-muted);">使用上方表單建立，或從策略研究頁面一鍵部署</span></div>';
+                if (countEl) countEl.textContent = '';
                 return;
             }
-            document.getElementById('strategyCards').innerHTML = res.data.map(s => `
-            <div class="strategy-card">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                    <div class="name">${s.name}</div>
-                    <label class="toggle">
-                        <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleStrategy('${s.name}', this.checked)">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="desc">${s.description || s.name}</div>
-                <div class="meta">
-                    <span>標的: ${(s.symbols || []).join(', ')}</span>
-                    <span>版本: ${s.version || '1.0'}</span>
-                </div>
-                <div style="margin-top:8px">
-                    <button class="btn btn-red btn-sm" onclick="deleteStrategy('${s.name}')">刪除</button>
-                </div>
-            </div>
-        `).join('');
+            const activeCount = res.data.filter(s => s.enabled).length;
+            if (countEl) countEl.textContent = `${activeCount} 啟用 / ${res.data.length} 總計`;
+            document.getElementById('strategyCards').innerHTML = res.data.map(s => {
+                const isOn = s.enabled;
+                const statusColor = isOn ? 'var(--green)' : 'var(--text-muted)';
+                const statusIcon = isOn ? '🟢' : '🔴';
+                const statusText = isOn ? '執行中' : '已停止';
+                const paramStr = s.params ? Object.entries(s.params)
+                    .filter(([k]) => !['lot_size', 'max_position', 'order_type', 'stop_loss_pct', 'take_profit_pct'].includes(k))
+                    .map(([k, v]) => `${k}=${v}`).join(', ') : '';
+                const source = s.params?.source === 'research' ? '🔬 研究推薦' : '✏️ 手動建立';
+
+                return `<div class="strategy-card" style="display:flex; justify-content:space-between; align-items:center; padding:14px; margin-bottom:8px; background:var(--bg-card-hover); border:1px solid var(--border); border-radius:var(--radius-sm); transition: all 0.2s;">
+                    <div style="flex:1;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                            <span style="font-size:14px;">${statusIcon}</span>
+                            <span style="font-weight:700; font-size:14px;">${s.name}</span>
+                            <span style="font-size:10px; padding:2px 8px; border-radius:999px; background:${isOn ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.05)'}; color:${statusColor};">${statusText}</span>
+                            <span style="font-size:10px; padding:2px 8px; border-radius:999px; background:rgba(139,92,246,0.1); color:var(--purple);">${source}</span>
+                        </div>
+                        <div style="font-size:12px; color:var(--text-muted);">
+                            <span style="margin-right:12px;">📌 ${s.description || s.strategy_type || ''}</span>
+                            <span style="margin-right:12px;">🎯 ${(s.symbols || []).join(', ')}</span>
+                            ${paramStr ? `<span style="color:var(--text-secondary);">⚙️ ${paramStr}</span>` : ''}
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <button class="btn btn-primary btn-sm" onclick="editStrategy('${s.name}')" style="font-size:11px; padding:4px 10px;">✏️ 編輯</button>
+                        <label class="toggle"><input type="checkbox" ${isOn ? 'checked' : ''} onchange="toggleStrategy('${s.name}', this.checked)"><span class="slider"></span></label>
+                        <button class="btn btn-red btn-sm" onclick="deleteStrategy('${s.name}')" style="font-size:11px; padding:4px 10px;">刪除</button>
+                    </div>
+                </div>`;
+            }).join('');
         }
 
-        // === 操作 ===
+        // === 策略參數定義 ===
         const STRATEGY_PARAMS = {
             'sma_crossover': [
                 { id: 'pFast', label: '短期天數', type: 'number', value: 5 },
@@ -1320,48 +1617,115 @@
             const type = document.getElementById('sType').value;
             const container = document.getElementById('strategyParams');
             const params = STRATEGY_PARAMS[type] || [];
-
             if (!params.length) {
                 container.innerHTML = '<div style="color:var(--text-muted);font-size:13px">此策略無額外參數</div>';
                 return;
             }
-
             container.innerHTML = `<div class="form-row">` + params.map(p => `
             <div class="form-group">
                 <label>${p.label}</label>
-                <input id="${p.id}" type="${p.type}" value="${p.value}" 
-                       step="${p.step || 1}" style="width:100px">
-            </div>
-        `).join('') + `</div>`;
+                <input id="${p.id}" type="${p.type}" value="${p.value}" step="${p.step || 1}" style="width:90px">
+            </div>`).join('') + `</div>`;
+        }
+
+        // === 編輯模式狀態 ===
+        let editingStrategy = null; // 正在編輯的策略名稱
+
+        // 反向參數映射：從後端 params 名稱轉回前端 input ID
+        const PARAM_REVERSE_MAP = {
+            'sma_crossover': { 'fast_period': 'pFast', 'slow_period': 'pSlow', 'short_period': 'pFast', 'long_period': 'pSlow' },
+            'rsi_reversal': { 'rsi_period': 'pRsiPeriod', 'overbought': 'pOverbought', 'oversold': 'pOversold' },
+            'macd_signal': { 'fast_period': 'pFast', 'slow_period': 'pSlow', 'signal_period': 'pSignal' },
+            'bollinger_band': { 'period': 'pPeriod', 'std_dev': 'pStdDev' },
+        };
+
+        function editStrategy(name) {
+            // 從已載入的策略列表找到策略資訊
+            api('/strategy/list').then(res => {
+                const s = res?.data?.find(x => x.name === name);
+                if (!s) { alert('找不到策略'); return; }
+
+                editingStrategy = name;
+
+                // 填入表單
+                document.getElementById('sName').value = s.name;
+                document.getElementById('sSymbols').value = (s.symbols || []).join(',');
+
+                // 找到策略類型
+                const typeSelect = document.getElementById('sType');
+                const stratType = s.strategy_type || s.type || '';
+                if (typeSelect) {
+                    typeSelect.value = stratType;
+                    onStrategyTypeChange();
+                }
+
+                // 填入參數
+                setTimeout(() => {
+                    const p = s.params || {};
+                    const reverseMap = PARAM_REVERSE_MAP[stratType] || {};
+                    for (const [key, val] of Object.entries(p)) {
+                        const inputId = reverseMap[key];
+                        if (inputId) {
+                            const el = document.getElementById(inputId);
+                            if (el) el.value = val;
+                        }
+                    }
+
+                    // 填入下單風控
+                    if (p.lot_size) document.getElementById('sLotSize').value = p.lot_size;
+                    if (p.max_position) document.getElementById('sMaxPosition').value = p.max_position;
+                    if (p.order_type) document.getElementById('sPriceType').value = p.order_type;
+                    if (p.stop_loss_pct) document.getElementById('sStopLoss').value = (p.stop_loss_pct * 100).toFixed(1);
+                    if (p.take_profit_pct) document.getElementById('sTakeProfit').value = (p.take_profit_pct * 100).toFixed(1);
+                }, 100);
+
+                // 切換 UI 為編輯模式
+                document.getElementById('formTitle').innerHTML = '✏️ 編輯策略 <span style="font-size:12px; color:var(--accent);">' + name + '</span>';
+                document.getElementById('formActionBtn').innerHTML = '💾 更新策略';
+                document.getElementById('cancelEditBtn').style.display = 'inline-flex';
+                document.getElementById('deployBanner').style.display = 'none';
+
+                // 滾動到表單
+                document.getElementById('tab-strategies').scrollIntoView({ behavior: 'smooth' });
+            });
+        }
+
+        function cancelEdit() {
+            editingStrategy = null;
+            document.getElementById('formTitle').textContent = '➕ 快速建立策略';
+            document.getElementById('formActionBtn').innerHTML = '✅ 建立策略';
+            document.getElementById('cancelEditBtn').style.display = 'none';
+            // 清空表單
+            document.getElementById('sName').value = '';
+            document.getElementById('sSymbols').value = '';
+            document.getElementById('sType').value = 'sma_crossover';
+            onStrategyTypeChange();
+            document.getElementById('sLotSize').value = '1';
+            document.getElementById('sMaxPosition').value = '5';
+            document.getElementById('sPriceType').value = 'LMT';
+            document.getElementById('sStopLoss').value = '5.0';
+            document.getElementById('sTakeProfit').value = '10.0';
         }
 
         async function createStrategy() {
             const name = document.getElementById('sName').value.trim();
             const type = document.getElementById('sType').value;
             const symbols = document.getElementById('sSymbols').value.split(',').map(s => s.trim()).filter(Boolean);
-
-            // 下單控制參數
             const lot_size = parseInt(document.getElementById('sLotSize').value) || 1;
             const max_position = parseInt(document.getElementById('sMaxPosition').value) || 5;
             const price_type = document.getElementById('sPriceType').value;
-
-            // 風控參數
             const stop_loss_pct = parseFloat(document.getElementById('sStopLoss').value) || 5.0;
             const take_profit_pct = parseFloat(document.getElementById('sTakeProfit').value) || 10.0;
 
             if (!name || !symbols.length) { alert('請填寫策略名稱與標的'); return; }
 
-            // 收集策略專屬參數
             const params = {};
             (STRATEGY_PARAMS[type] || []).forEach(p => {
-                const val = document.getElementById(p.id).value;
-                params[p.id.substring(1)] = parseFloat(val); // 去掉 'p' 前綴
-                // map back to original param names expected by strategy classes
-                // e.g. pFast -> fast_period
+                const val = document.getElementById(p.id)?.value;
+                if (val !== undefined) params[p.id.substring(1)] = parseFloat(val);
             });
 
-            // 參數映射 (Frontend ID -> Backend Key)
-            // 這裡做簡單轉換，實際應對照 strategy class init
+            // 參數映射
             if (type === 'sma_crossover') {
                 params['fast_period'] = params['Fast'];
                 params['slow_period'] = params['Slow'];
@@ -1378,25 +1742,39 @@
                 params['std_dev'] = params['StdDev'];
             }
 
-            // 加入通用參數
             params['lot_size'] = lot_size;
             params['max_position'] = max_position;
             params['order_type'] = price_type;
-            params['stop_loss_pct'] = stop_loss_pct / 100; // 轉為小數
+            params['stop_loss_pct'] = stop_loss_pct / 100;
             params['take_profit_pct'] = take_profit_pct / 100;
 
-            await api('/strategy/create', {
-                method: 'POST',
-                body: JSON.stringify({ name, strategy_type: type, symbols, params, enabled: false }),
-            });
+            if (editingStrategy) {
+                // === 更新模式 ===
+                await api(`/strategy/${editingStrategy}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ name, strategy_type: type, symbols, params, enabled: false }),
+                });
+                alert(`策略 [${name}] 更新成功！`);
+                cancelEdit();
+            } else {
+                // === 建立模式 ===
+                await api('/strategy/create', {
+                    method: 'POST',
+                    body: JSON.stringify({ name, strategy_type: type, symbols, params, enabled: false }),
+                });
+                alert(`策略 [${name}] 建立成功！請在下方啟用。`);
+            }
+
+            // 隱藏部署橫幅
+            document.getElementById('deployBanner').style.display = 'none';
             loadStrategies();
         }
 
-        // 初始化呼叫一次以顯示預設策略參數
         onStrategyTypeChange();
 
         async function toggleStrategy(name, enabled) {
             await api(`/strategy/${name}/toggle?enabled=${enabled}`, { method: 'POST' });
+            loadStrategies();
         }
 
         async function deleteStrategy(name) {
@@ -1404,6 +1782,61 @@
             await api(`/strategy/${name}`, { method: 'DELETE' });
             loadStrategies();
         }
+
+        // === 研究頁面 postMessage 部署監聽 ===
+        window.addEventListener('message', function (event) {
+            if (!event.data || event.data.type !== 'DEPLOY_STRATEGY') return;
+            const d = event.data;
+
+            // 自動切到策略 Tab
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            const stratBtn = document.querySelector('.tab-btn[data-tab="strategies"]');
+            if (stratBtn) stratBtn.classList.add('active');
+            document.getElementById('tab-strategies').classList.add('active');
+
+            // 填入策略資訊
+            const stratName = `${d.strategyId}_${d.ticker}`.toUpperCase();
+            document.getElementById('sName').value = stratName;
+            document.getElementById('sSymbols').value = d.ticker;
+
+            // 設定策略類型
+            const typeSelect = document.getElementById('sType');
+            if (typeSelect) {
+                typeSelect.value = d.strategyType;
+                onStrategyTypeChange();
+            }
+
+            // 填入最佳參數
+            setTimeout(() => {
+                const p = d.params || {};
+                if (d.strategyType === 'sma_crossover') {
+                    const f = document.getElementById('pFast'); if (f) f.value = p.fast_period || 5;
+                    const s = document.getElementById('pSlow'); if (s) s.value = p.slow_period || 20;
+                } else if (d.strategyType === 'rsi_reversal') {
+                    const r = document.getElementById('pRsiPeriod'); if (r) r.value = p.rsi_period || 14;
+                    const ob = document.getElementById('pOverbought'); if (ob) ob.value = p.overbought || 70;
+                    const os = document.getElementById('pOversold'); if (os) os.value = p.oversold || 30;
+                } else if (d.strategyType === 'macd_signal') {
+                    const f = document.getElementById('pFast'); if (f) f.value = p.fast_period || 12;
+                    const s = document.getElementById('pSlow'); if (s) s.value = p.slow_period || 26;
+                    const sg = document.getElementById('pSignal'); if (sg) sg.value = p.signal_period || 9;
+                } else if (d.strategyType === 'bollinger_band') {
+                    const pr = document.getElementById('pPeriod'); if (pr) pr.value = p.period || 20;
+                    const sd = document.getElementById('pStdDev'); if (sd) sd.value = p.std_dev || 2.0;
+                }
+
+                // 顯示部署提示
+                const banner = document.getElementById('deployBanner');
+                const bannerText = document.getElementById('deployBannerText');
+                banner.style.display = 'block';
+                const paramStr = Object.entries(p).map(([k, v]) => `${k}=${v}`).join(', ');
+                bannerText.textContent = `策略: ${d.strategyType} | 標的: ${d.ticker} | 參數: ${paramStr}`;
+
+                // 滾動到頂部
+                document.getElementById('tab-strategies').scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        });
 
         async function placeOrder() {
             const symbol = document.getElementById('oSymbol').value.trim();
@@ -1417,17 +1850,18 @@
                 body: JSON.stringify({ symbol, action, price, quantity, price_type }),
             });
             if (res?.data?.success) {
-                alert('下單成功');
+                toast('✅ 下單成功', 'success');
                 refreshOrders();
                 loadTrades();
             } else {
-                alert('下單失敗: ' + (res?.detail || '未知錯誤'));
+                toast('❌ 下單失敗: ' + (res?.detail || '未知錯誤'), 'error', 5000);
             }
         }
 
-        function fillOrderForm(symbol, price) {
+        function fillOrderForm(symbol, price, action = 'Buy') {
             document.getElementById('oSymbol').value = symbol;
             document.getElementById('oPrice').value = price;
+            document.getElementById('oAction').value = action;
             // 滾動到下單區塊
             document.getElementById('orderPanel').scrollIntoView({ behavior: 'smooth' });
         }
@@ -1667,6 +2101,18 @@
             }
         }
 
+        async function clearTradeRecords() {
+            if (!confirm('確定要清除所有本地交易記錄？\n此動作無法復原，但不會影響券商端實際成交。')) return;
+            const res = await api('/settings/clear_trades', { method: 'POST' });
+            if (res?.message) {
+                alert(res.message);
+                loadTrades(); // 重新整理交易列表
+                loadOverview(); // 重新計算損益 (如果 summary 有用到 trade history)
+            } else {
+                alert(res?.detail || '清除失敗');
+            }
+        }
+
         function toggleWatchlistAutoRefresh(checked) {
             if (watchlistTimer) { clearInterval(watchlistTimer); watchlistTimer = null; }
             if (checked) {
@@ -1727,20 +2173,32 @@
                 const cp = q.change_price ?? 0;
                 const dir = cp > 0 ? 'up' : cp < 0 ? 'dn' : 'flat';
                 const arrow = cp > 0 ? '▲' : cp < 0 ? '▼' : '';
+                const pnl = q.pnl || 0;
+                const roi = q.roi || 0;
+                const pnl_cls = pnl > 0 ? 'wl-up' : pnl < 0 ? 'wl-dn' : 'wl-flat';
+                const roi_cls = roi > 0 ? 'wl-up' : roi < 0 ? 'wl-dn' : 'wl-flat';
+                const has_pos = q.qty > 0;
+
                 return `
-                <tr draggable="true" data-symbol="${q.symbol}" style="cursor:pointer" ondblclick="fillOrderForm('${q.symbol}', ${q.close})">
+                <tr draggable="true" data-symbol="${q.symbol}" style="cursor:pointer">
                     <td class="col-drag" style="cursor:grab;color:var(--text-muted)">☰</td>
-                    <td class="col-symbol">${q.symbol}</td>
-                    <td class="col-name">${q.name || '--'}</td>
-                    <td class="wl-price-${dir}">${fmt(q.close)}</td>
-                    <td class="wl-${dir}">${arrow} ${fmt(Math.abs(cp))}</td>
-                    <td><span class="wl-chg-badge ${dir}">${fmtPct(q.change_rate)}</span></td>
-                    <td class="wl-${dir}">${fmt(q.buy_price)}</td>
-                    <td class="wl-${dir}">${fmt(q.sell_price)}</td>
-                    <td>${fmt(q.open)}</td>
-                    <td class="wl-hi">${fmt(q.high)}</td>
-                    <td class="wl-lo">${fmt(q.low)}</td>
-                    <td class="wl-vol">${fmt(q.volume)}</td>
+                    <td class="col-symbol" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')">${q.symbol}</td>
+                    <td class="col-name" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')">${q.name || '--'}</td>
+                    <td class="wl-price-${dir}" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')">${fmt(q.close)}</td>
+                    <td class="wl-${dir}" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')">${arrow} ${fmt(Math.abs(cp))}</td>
+                    <td ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')"><span class="wl-chg-badge ${dir}">${fmtPct(q.change_rate)}</span></td>
+                    
+                    <td ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')">${fmt(q.open)}</td>
+                    <td class="wl-hi" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')">${fmt(q.high)}</td>
+                    <td class="wl-lo" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')">${fmt(q.low)}</td>
+                    <td class="wl-vol" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Buy')">${fmt(q.volume)}</td>
+
+                    <!-- 持倉資訊 (已移至後方) -->
+                    <td class="bg-inventory" style="color:${has_pos ? '#fff' : 'var(--text-muted)'}" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Sell')">${has_pos ? q.qty : '--'}</td>
+                    <td class="bg-inventory" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Sell')">${has_pos ? fmt(q.market_value) : '--'}</td>
+                    <td class="bg-inventory ${pnl_cls}" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Sell')">${has_pos ? fmt(pnl) : '--'}</td>
+                    <td class="bg-inventory ${roi_cls}" ondblclick="fillOrderForm('${q.symbol}', ${q.close}, 'Sell')">${has_pos ? fmtPct(roi) : '--'}</td>
+
                     <td class="col-action"><button class="wl-remove-btn" onclick="removeWatchlist('${q.symbol}')">✕</button></td>
                 </tr>
             `;
@@ -1780,6 +2238,435 @@
                 document.getElementById('statusText').textContent = '離線';
             }
         }
+
+        // === 歷史數據管理 ===
+        let isHistoryPolling = false;
+
+        function renderHistoryRow(item) {
+            const row = document.createElement('tr');
+            row.id = `history-row-${item.symbol}`;
+            updateHistoryRow(item, row);
+            return row;
+        }
+
+        function updateHistoryRow(item, row) {
+            let rangeText = '<span style="color:var(--text-muted)">無數據</span>';
+            let actionText = '下載近3月';
+            let btnClass = 'btn-primary';
+            let isUpToDate = false;
+            let hasData = item.count > 0;
+            let isDisabled = false;
+
+            if (item.start_date && item.end_date) {
+                rangeText = `${item.start_date.split('T')[0]} ~ ${item.end_date.split('T')[0]}`;
+            }
+
+            // Smart Date Logic: Check against last_trading_day
+            if (item.end_date && item.last_trading_day) {
+                const lastTradingDay = item.last_trading_day.split('T')[0];
+                const endDate = item.end_date.split('T')[0];
+                if (endDate >= lastTradingDay) {
+                    isUpToDate = true;
+                }
+            }
+
+            // UI State Logic
+            if (fetchingSymbols.has(item.symbol)) {
+                actionText = '抓取中...';
+                btnClass = 'btn-outline';
+                isDisabled = true;
+            } else if (!hasData) {
+                actionText = '下載近3月';
+                btnClass = 'btn-primary';
+            } else if (isUpToDate) {
+                actionText = '已是最新';
+                btnClass = 'btn-outline';
+                isDisabled = true;
+            } else {
+                actionText = '更新至今日';
+                btnClass = 'btn-green';
+            }
+
+            // DOM Patching
+            // Only update if content changed to minimize flicker/layout thrashing
+            const newHtml = `
+                 <td><span class="badge badge-yellow">${item.symbol}</span></td>
+                 <td>${item.name || ''}</td>
+                 <td>${rangeText}</td>
+                 <td>${item.count.toLocaleString()}</td>
+                 <td style="text-align: center;">
+                     <div style="display: flex; gap: 6px; justify-content: center;">
+                         <button class="btn btn-sm ${btnClass}" 
+                             onclick="fetchHistory('${item.symbol}', this)" 
+                             ${isDisabled ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}>
+                             ${actionText}
+                         </button>
+                         <button class="btn btn-sm btn-red btn-outline" 
+                             onclick="deleteHistory('${item.symbol}')"
+                             ${item.count === 0 ? 'disabled style="display:none"' : ''}>
+                             刪除
+                         </button>
+                     </div>
+                 </td>
+             `;
+
+            if (row.innerHTML !== newHtml) {
+                row.innerHTML = newHtml;
+            }
+        }
+
+        function startHistoryPolling() {
+            if (isHistoryPolling) return;
+            if (fetchingSymbols.size === 0) return;
+
+            isHistoryPolling = true;
+            console.log("Starting history polling...");
+
+            if (historyTimer) clearInterval(historyTimer);
+            historyTimer = setInterval(async () => {
+                if (fetchingSymbols.size === 0) {
+                    stopHistoryPolling();
+                    return;
+                }
+                await loadHistoryStatus(true);
+            }, 2000);
+        }
+
+        function stopHistoryPolling() {
+            console.log("Stopping history polling...");
+            if (historyTimer) {
+                clearInterval(historyTimer);
+                historyTimer = null;
+            }
+            isHistoryPolling = false;
+        }
+        async function loadHistoryStatus(isUpdate = false) {
+            const tbody = document.getElementById('historyBody');
+            if (!isUpdate) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">載入中...</td></tr>';
+            }
+
+            try {
+                const response = await fetch('/api/history/status');
+                const result = await response.json();
+
+                if (!Array.isArray(result) || result.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">無自選股資料</td></tr>';
+                    return;
+                }
+
+                // If initializing and checks passed, clear body
+                if (!isUpdate) tbody.innerHTML = '';
+
+                result.forEach(item => {
+                    let row = document.getElementById(`history-row-${item.symbol}`);
+                    if (row) {
+                        updateHistoryRow(item, row);
+                    } else {
+                        row = renderHistoryRow(item);
+                        tbody.appendChild(row);
+                    }
+
+                    // Check if fetching completed
+                    if (fetchingSymbols.has(item.symbol)) {
+                        // If current data is up to date (based on last_trading_day), remove from fetching
+                        if (item.end_date && item.last_trading_day) {
+                            const lastTradingDay = item.last_trading_day.split('T')[0];
+                            const endDate = item.end_date.split('T')[0];
+                            if (endDate >= lastTradingDay) {
+                                fetchingSymbols.delete(item.symbol);
+                                // Update row again to remove "Fetching..." state
+                                updateHistoryRow(item, row);
+                            }
+                        }
+                    }
+                });
+
+            } catch (err) {
+                console.error("Load history failed:", err);
+                if (!isUpdate) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--red);">載入失敗</td></tr>';
+            }
+        }
+
+        async function fetchHistory(symbol, btn) {
+            if (!confirm(`確定要執行抓取 ${symbol} 嗎？`)) return;
+
+            // 標記為正在抓取
+            fetchingSymbols.add(symbol);
+
+            // 立即更新這個按鈕的 UI (優化體驗)
+            if (btn) {
+                btn.innerText = '抓取中...';
+                btn.disabled = true;
+                btn.classList.remove('btn-primary', 'btn-green');
+                btn.classList.add('btn-outline');
+            }
+
+            // 啟動 Smart Polling
+            startHistoryPolling();
+
+            try {
+                const res = await fetch(`/api/history/fetch/${symbol}`, { method: 'POST' });
+                if (res.ok) {
+                    console.log(`Started fetching ${symbol}`);
+                } else {
+                    alert('請求失敗');
+                    fetchingSymbols.delete(symbol);
+                    loadHistoryStatus(true);
+                }
+            } catch (err) {
+                console.error(err);
+                alert('發生錯誤');
+                fetchingSymbols.delete(symbol);
+                loadHistoryStatus(true);
+            }
+
+            // 安全機制: 60秒後自動移除 fetching 狀態 (避免無窮迴圈)
+            setTimeout(() => {
+                if (fetchingSymbols.has(symbol)) {
+                    fetchingSymbols.delete(symbol);
+                    loadHistoryStatus(true);
+                }
+            }, 60000);
+        }
+
+        async function deleteHistory(symbol) {
+            if (!confirm(`確定要刪除 ${symbol} 的所有歷史數據嗎？\n(此動作無法復原)`)) return;
+
+            try {
+                const res = await fetch(`/api/history/${symbol}`, { method: 'DELETE' });
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(`已刪除 ${data.deleted_count} 筆資料`);
+                    loadHistoryStatus(true);
+                } else {
+                    alert('刪除失敗');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('刪除發生錯誤');
+            }
+        }
+
+        // === 策略研究分析（取代舊回測）===
+        async function runStrategyResearch() {
+            const rawSymbols = document.getElementById('sSymbols').value;
+            const ticker = rawSymbols ? rawSymbols.split(',')[0].trim() : '';
+            if (!ticker) {
+                alert('請先在上方填入標的代碼');
+                return;
+            }
+
+            // 顯示進度
+            const progressEl = document.getElementById('researchProgress');
+            const progressText = document.getElementById('researchProgressText');
+            const progressBar = document.getElementById('researchProgressBar');
+            progressEl.style.display = 'block';
+            document.getElementById('researchResults').style.display = 'none';
+            progressText.textContent = '正在增量更新資料...';
+            progressBar.style.width = '5%';
+
+            // 停用按鈕
+            const btn = document.getElementById('btnResearch');
+            btn.disabled = true;
+            btn.textContent = '⏳ 分析中...';
+
+            try {
+                // 呼叫研究 API
+                const startRes = await api('/research/start', {
+                    method: 'POST',
+                    body: JSON.stringify({ ticker })
+                });
+
+                if (!startRes?.task_id) {
+                    throw new Error('啟動研究失敗');
+                }
+
+                const taskId = startRes.task_id;
+
+                // 輪詢進度
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const status = await api(`/research/status/${taskId}`);
+                        if (!status) return;
+
+                        progressText.textContent = status.message || '處理中...';
+                        progressBar.style.width = (status.percent || 0) + '%';
+
+                        if (status.status === 'done' || status.status === 'error') {
+                            clearInterval(pollInterval);
+                            progressEl.style.display = 'none';
+                            btn.disabled = false;
+                            btn.textContent = '🧬 策略研究分析';
+
+                            if (status.status === 'done') {
+                                await loadResearchResults(ticker);
+                            } else {
+                                alert('研究分析失敗: ' + (status.message || '未知錯誤'));
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Progress poll error:', e);
+                    }
+                }, 2000);
+
+            } catch (e) {
+                console.error(e);
+                alert('研究分析啟動失敗: ' + e.message);
+                progressEl.style.display = 'none';
+                btn.disabled = false;
+                btn.textContent = '🧬 策略研究分析';
+            }
+        }
+
+        async function loadResearchResults(ticker) {
+            try {
+                const res = await api(`/research/results/${ticker}`);
+                if (!res) { alert('無法載入研究結果'); return; }
+
+                const container = document.getElementById('researchResultsContent');
+                const resultsEl = document.getElementById('researchResults');
+                resultsEl.style.display = 'block';
+
+                let html = '<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">';
+
+                const styles = [
+                    { key: 'style_A', label: '🛡️ A. 保守穩定型', desc: '低回撤優先 · Calmar 排序' },
+                    { key: 'style_B', label: '🚀 B. 積極成長型', desc: '高報酬優先 · CAGR 排序' },
+                ];
+
+                for (const style of styles) {
+                    const data = res[style.key];
+                    if (!data) continue;
+
+                    const best = data.best_pick || {};
+                    const oos = data.oos_summary || {};
+
+                    html += `<div style="padding:16px; background:var(--bg-card-hover); border:1px solid var(--border); border-radius:var(--radius);">
+                        <div style="font-size:14px; font-weight:700; margin-bottom:4px;">${style.label}</div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">${style.desc}</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                            <div class="stat-card" style="padding:8px;">
+                                <div class="stat-label">最佳策略</div>
+                                <div class="stat-value" style="font-size:13px;">${best.strategy_name || '--'}</div>
+                            </div>
+                            <div class="stat-card" style="padding:8px;">
+                                <div class="stat-label">年化報酬 (CAGR)</div>
+                                <div class="stat-value ${(oos.cagr_pct || 0) >= 0 ? 'positive' : 'negative'}">${oos.cagr_pct || 0}%</div>
+                            </div>
+                            <div class="stat-card" style="padding:8px;">
+                                <div class="stat-label">最大回撤 (MaxDD)</div>
+                                <div class="stat-value negative">${oos.max_drawdown_pct || 0}%</div>
+                            </div>
+                            <div class="stat-card" style="padding:8px;">
+                                <div class="stat-label">CALMAR RATIO</div>
+                                <div class="stat-value">${oos.calmar_ratio || 0}</div>
+                            </div>
+                        </div>`;
+
+                    // 100萬 模擬
+                    if (data.oos_equity && data.oos_equity.length > 0) {
+                        const eq = data.oos_equity;
+                        const initCash = 1000000;
+                        const periods = [
+                            { label: '1個月前', days: 22 },
+                            { label: '3個月前', days: 66 },
+                            { label: '6個月前', days: 132 },
+                            { label: '1年前', days: 252 },
+                        ];
+
+                        html += '<div style="margin-top:10px;">';
+                        html += '<div style="font-size:12px; font-weight:600; margin-bottom:6px;">💰 假設投入 100 萬</div>';
+                        html += '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;">';
+
+                        for (const p of periods) {
+                            const idx = Math.max(0, eq.length - p.days);
+                            const startVal = eq[idx] || eq[0];
+                            const endVal = eq[eq.length - 1];
+                            const returnPct = startVal !== 0 ? (endVal - startVal) / startVal : 0;
+                            const endAmount = initCash * (1 + returnPct);
+                            const pnl = endAmount - initCash;
+                            const isPos = pnl >= 0;
+                            const color = isPos ? 'var(--red)' : 'var(--green)';
+
+                            html += `<div style="padding:6px; background:var(--bg-card); border-radius:var(--radius-sm); text-align:center;">
+                                <div style="font-size:10px; color:var(--text-muted);">${p.label}</div>
+                                <div style="font-size:14px; font-weight:700; color:${color};">${(endAmount / 10000).toFixed(1)}萬</div>
+                                <div style="font-size:10px; color:${color};">${isPos ? '+' : ''}${(pnl / 10000).toFixed(1)}萬</div>
+                                <div style="font-size:10px; color:${color};">${isPos ? '+' : ''}${(returnPct * 100).toFixed(1)}%</div>
+                            </div>`;
+                        }
+                        html += '</div></div>';
+                    }
+
+                    html += '</div>';
+                }
+                html += '</div>';
+                container.innerHTML = html;
+
+                // 生成策略建議
+                generateAdvice(res, ticker);
+            } catch (e) {
+                console.error('Load research results error:', e);
+                alert('載入研究結果失敗');
+            }
+        }
+
+        function generateAdvice(res, ticker) {
+            const adviceEl = document.getElementById('strategyAdvice');
+            const content = document.getElementById('adviceContent');
+            const styleA = res.style_A;
+            const styleB = res.style_B;
+            if (!styleA && !styleB) return;
+
+            let advice = [];
+            const oosA = styleA?.oos_summary || {};
+            const oosB = styleB?.oos_summary || {};
+            const bestA = styleA?.best_pick || {};
+            const bestB = styleB?.best_pick || {};
+
+            // 建議 1: 比較保守 vs 積極
+            if (oosA.calmar_ratio > 1.5) {
+                advice.push('✅ <b>保守型策略 (' + (bestA.strategy_name || '') + ')</b> Calmar Ratio ' + oosA.calmar_ratio + ' 優良，風險報酬比佳，適合穩健操作。');
+            }
+            if (oosB.cagr_pct && oosA.cagr_pct && oosB.cagr_pct > oosA.cagr_pct * 1.3) {
+                advice.push('📈 <b>積極型策略 (' + (bestB.strategy_name || '') + ')</b> CAGR ' + oosB.cagr_pct + '% 明顯較高，但回撤 ' + oosB.max_drawdown_pct + '% 需注意風控。');
+            }
+
+            // 建議 2: 回撤風險
+            const maxDD = Math.min(oosA.max_drawdown_pct || 0, oosB.max_drawdown_pct || 0);
+            if (maxDD < -30) {
+                advice.push('⚠️ 最大回撤超過 30%，建議<b>降低單筆下單張數</b>或<b>加嚴停損</b>。');
+            }
+
+            // 建議 3: 最佳參數
+            if (bestA.best_params) {
+                advice.push('🔧 研究最佳參數: <code>' + JSON.stringify(bestA.best_params) + '</code>，可考慮用此參數取代現有設定。');
+            }
+
+            // 建議 4: 近期表現
+            if (styleA?.oos_equity && styleA.oos_equity.length > 22) {
+                const eq = styleA.oos_equity;
+                const recent = eq.slice(-22);
+                const recentReturn = (recent[recent.length - 1] - recent[0]) / recent[0];
+                if (recentReturn < -0.05) {
+                    advice.push('🔻 近一個月回撤 ' + (recentReturn * 100).toFixed(1) + '%，策略可能正處於不利週期，建議<b>暫時觀望或降低部位</b>。');
+                } else if (recentReturn > 0.05) {
+                    advice.push('🔺 近一個月報酬 +' + (recentReturn * 100).toFixed(1) + '%，策略表現穩定，可維持或適度加碼。');
+                }
+            }
+
+            advice.push('💡 Walk-Forward 分析使用樣本外數據驗證，結果較傳統回測可靠。建議定期重新執行研究以追蹤策略衰退。');
+
+            if (advice.length) {
+                adviceEl.style.display = 'block';
+                content.innerHTML = advice.map(a => '<div style="margin-bottom:6px;">' + a + '</div>').join('');
+            }
+        }
+
+
+
+
 
         // === 初始載入 ===
         checkHealth();

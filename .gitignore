@@ -16,3 +16,21 @@ config/.env
 
 # Agent
 .gemini/
+
+# Database
+data/neostock2.db
+
+# Research data (generated)
+data/research_kbars/
+data/research_results/
+
+# Temporary test scripts and output
+check_*.py
+check_*.txt
+test_tick_price.py
+test_tick_result.txt
+test_simulation_fill.py
+test_backtest_api.py
+debug_*.py
+status.json
+git_status_output.txt

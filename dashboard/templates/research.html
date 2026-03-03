@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeoStock2 — 策略研究</title>
+    <meta name="description" content="跨日波段策略自動研究工具">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2236;
+            --bg-card-hover: #1f2a42;
+            --bg-input: #0d1321;
+            --text-primary: #e8edf5;
+            --text-secondary: #8b95a8;
+            --text-muted: #5a6478;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.3);
+            --green: #10b981;
+            --green-bg: rgba(16, 185, 129, 0.12);
+            --red: #ef4444;
+            --red-bg: rgba(239, 68, 68, 0.12);
+            --yellow: #f59e0b;
+            --yellow-bg: rgba(245, 158, 11, 0.12);
+            --purple: #8b5cf6;
+            --purple-bg: rgba(139, 92, 246, 0.12);
+            --border: #1e2a3e;
+            --border-light: #2a3650;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* === Navbar (standalone mode only) === */
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            height: 56px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+        }
+
+        .navbar .brand {
+            font-size: 18px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-decoration: none;
+        }
+
+        .navbar .nav-links {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .navbar .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 13px;
+            transition: var(--transition);
+        }
+
+        .navbar .nav-links a:hover {
+            color: var(--accent);
+        }
+
+        /* iframe 模式隱藏 */
+        body.in-iframe .navbar,
+        body.in-iframe .back-link {
+            display: none !important;
+        }
+
+        body.in-iframe .main-content {
+            padding-top: 16px;
+        }
+
+        /* === Main === */
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .page-header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* === Card === */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+            transition: var(--transition);
+        }
+
+        .card:hover {
+            border-color: var(--border-light);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* === Step Wizard === */
+        .steps-bar {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 32px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .step-item {
+            flex: 1;
+            padding: 14px 16px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            border-right: 1px solid var(--border);
+            position: relative;
+            transition: var(--transition);
+        }
+
+        .step-item:last-child {
+            border-right: none;
+        }
+
+        .step-item.active {
+            color: var(--accent);
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        .step-item.done {
+            color: var(--green);
+            background: rgba(16, 185, 129, 0.06);
+        }
+
+        .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: var(--border-light);
+            font-size: 11px;
+            font-weight: 700;
+            margin-right: 6px;
+        }
+
+        .step-item.active .step-num {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .step-item.done .step-num {
+            background: var(--green);
+            color: #fff;
+        }
+
+        /* === Stepper Content === */
+        .step-panel {
+            display: none;
+            animation: fadeIn .3s ease;
+        }
+
+        .step-panel.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: none;
+            }
+        }
+
+        /* === Form === */
+        .form-row {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-group label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            transition: var(--transition);
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        /* === Button === */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border-light);
+            color: var(--text-secondary);
+        }
+
+        .btn-outline:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-lg {
+            padding: 14px 32px;
+            font-size: 15px;
+        }
+
+        .btn-deploy {
+            padding: 4px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .btn-deploy:hover {
+            box-shadow: 0 0 16px var(--accent-glow);
+            transform: translateY(-1px);
+        }
+
+        /* === Progress === */
+        .progress-container {
+            background: var(--bg-input);
+            border-radius: 999px;
+            height: 8px;
+            overflow: hidden;
+            margin: 16px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--accent), var(--purple));
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        .progress-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        .progress-pct {
+            font-size: 36px;
+            font-weight: 700;
+            text-align: center;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* === Strategy Templates === */
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .template-card {
+            background: var(--bg-card-hover);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+            transition: var(--transition);
+        }
+
+        .template-card .t-name {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .template-card .t-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        /* === Results: A/B Dual Column === */
+        .results-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .result-column {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .result-column::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+        }
+
+        .result-column.style-a::before {
+            background: linear-gradient(90deg, var(--green), #34d399);
+        }
+
+        .result-column.style-b::before {
+            background: linear-gradient(90deg, var(--purple), #c084fc);
+        }
+
+        .result-column .col-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .result-column.style-a .col-title {
+            color: var(--green);
+        }
+
+        .result-column.style-b .col-title {
+            color: var(--purple);
+        }
+
+        .result-column .col-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        /* Stats grid */
+        .mini-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .mini-stat {
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+            padding: 10px 12px;
+        }
+
+        .mini-stat .ms-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .mini-stat .ms-value {
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 2px;
+        }
+
+        .ms-positive {
+            color: var(--red);
+        }
+
+        .ms-negative {
+            color: var(--green);
+        }
+
+        /* 100萬模擬區 */
+        .sim-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin: 16px 0;
+        }
+
+        .sim-card {
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+            padding: 10px 8px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .sim-card .sim-period {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .sim-card .sim-amount {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .sim-card .sim-pnl {
+            font-size: 11px;
+            margin-top: 2px;
+        }
+
+        .sim-card .sim-pct {
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        /* Strategy result table */
+        .strat-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .strat-table th {
+            text-align: left;
+            padding: 8px 6px;
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .strat-table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .strat-table tr:hover td {
+            background: var(--bg-card-hover);
+        }
+
+        .strat-table .rank-1 {
+            color: var(--yellow);
+            font-weight: 700;
+        }
+
+        /* Equity Chart */
+        .chart-container {
+            width: 100%;
+            height: 200px;
+            margin-top: 16px;
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* Data status */
+        .data-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+        }
+
+        .data-status .ds-icon {
+            font-size: 28px;
+        }
+
+        .data-status .ds-info h3 {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .data-status .ds-info p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-light);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            margin-bottom: 16px;
+            transition: var(--transition);
+        }
+
+        .back-link:hover {
+            color: var(--accent);
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar">
+        <a class="brand" href="/">NeoStock2</a>
+        <div class="nav-links">
+            <a href="/">📊 儀表板</a>
+            <a href="/research" style="color: var(--accent);">🔬 策略研究</a>
+        </div>
+    </nav>
+
+    <div class="main-content">
+        <a href="/" class="back-link">← 返回儀表板</a>
+
+        <div class="page-header">
+            <h1>🔬 跨日波段策略研究</h1>
+            <p>自動分析您的自選股，找出最適合的波段交易策略。保守型 &amp; 積極型雙風格同步搜尋。</p>
+        </div>
+
+        <!-- Step 指示器 -->
+        <div class="steps-bar" id="stepsBar">
+            <div class="step-item active" data-step="1"><span class="step-num">1</span> 選擇標的</div>
+            <div class="step-item" data-step="2"><span class="step-num">2</span> 資料準備</div>
+            <div class="step-item" data-step="3"><span class="step-num">3</span> 策略模板</div>
+            <div class="step-item" data-step="4"><span class="step-num">4</span> 執行研究</div>
+            <div class="step-item" data-step="5"><span class="step-num">5</span> 研究結果</div>
+        </div>
+
+        <!-- Step 1: 選擇標的 -->
+        <div class="step-panel active" id="step1">
+            <div class="card">
+                <div class="card-title">📈 選擇研究標的</div>
+                <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
+                    從您的自選股中選擇，或直接輸入股票代碼。系統將自動下載 5 年 60 分 K 線資料並進行研究。
+                </p>
+                <div class="form-row">
+                    <div class="form-group" style="flex:1;">
+                        <label>自選股</label>
+                        <select id="watchlistSelect" style="width:100%;">
+                            <option value="">-- 載入中... --</option>
+                        </select>
+                    </div>
+                    <div style="padding:8px; color:var(--text-muted); font-size:13px;">或</div>
+                    <div class="form-group" style="flex:1;">
+                        <label>手動輸入股票代碼</label>
+                        <input id="tickerInput" placeholder="例如 2330" style="width:100%;">
+                    </div>
+                </div>
+                <div style="margin-top:20px; text-align:center;">
+                    <button class="btn btn-primary btn-lg" onclick="goToStep(2)">下一步：資料準備 →</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: 資料準備 -->
+        <div class="step-panel" id="step2">
+            <div class="card">
+                <div class="card-title">💾 資料準備</div>
+                <div id="dataStatusArea">
+                    <div class="data-status">
+                        <div class="ds-icon"><span class="spinner"></span></div>
+                        <div class="ds-info">
+                            <h3>檢查中...</h3>
+                            <p>正在檢查資料狀態</p>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top:20px; display:flex; gap:12px; justify-content:center;">
+                    <button class="btn btn-outline" onclick="goToStep(1)">← 上一步</button>
+                    <button class="btn btn-primary btn-lg" id="dataNextBtn" onclick="goToStep(3)" disabled>下一步
+                        →</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: 策略模板 -->
+        <div class="step-panel" id="step3">
+            <div class="card">
+                <div class="card-title">🧩 策略模板（全自動）</div>
+                <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
+                    系統將使用以下 5 個經典跨日波段策略模板，自動掃描最佳參數。您無需手動設定。
+                </p>
+                <div class="template-grid" id="templateGrid"></div>
+                <div style="margin-top:24px; display:flex; gap:12px; justify-content:center;">
+                    <button class="btn btn-outline" onclick="goToStep(2)">← 上一步</button>
+                    <button class="btn btn-primary btn-lg" onclick="startResearch()">🚀 開始研究</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: 執行研究 -->
+        <div class="step-panel" id="step4">
+            <div class="card" style="text-align:center; padding:48px 24px;">
+                <div class="card-title" style="justify-content:center;">⏳ 研究進行中</div>
+                <div class="progress-pct" id="progressPct">0%</div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <div class="progress-text" id="progressMsg">正在初始化...</div>
+                <p style="font-size:12px; color:var(--text-muted); margin-top:24px;">
+                    系統正在掃描 5 個策略模板 × 2 種風格（A/B）的所有參數組合，<br>
+                    並透過 Walk-Forward 驗證避免過度擬合。此過程可能需要數分鐘。
+                </p>
+            </div>
+        </div>
+
+        <!-- Step 5: 結果展示 -->
+        <div class="step-panel" id="step5">
+            <div class="card" style="text-align:center; margin-bottom:24px; padding:16px;">
+                <h2 style="font-size:18px; margin-bottom:4px;">
+                    📊 <span id="resultTicker"></span> 策略研究結果
+                </h2>
+                <p style="font-size:12px; color:var(--text-muted);" id="resultTimestamp"></p>
+            </div>
+
+            <div class="results-grid">
+                <!-- Style A -->
+                <div class="result-column style-a">
+                    <div class="col-title">🛡️ A. 保守穩定型</div>
+                    <div class="col-sub">低回撤優先 · Calmar 排序 · MaxDD &lt; 25%</div>
+                    <div id="bestA_stats" class="mini-stats"></div>
+                    <!-- 100萬模擬 -->
+                    <div class="card-title" style="font-size:11px; margin-top:8px;">💰 假設投入 100 萬</div>
+                    <div class="sim-grid" id="simA"></div>
+                    <!-- 排名表 -->
+                    <div class="card-title" style="font-size:11px; margin-top:8px;">📋 策略排名</div>
+                    <div style="overflow-x:auto;">
+                        <table class="strat-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>策略</th>
+                                    <th>CAGR</th>
+                                    <th>MaxDD</th>
+                                    <th>Calmar</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableA"></tbody>
+                        </table>
+                    </div>
+                    <div class="chart-container"><canvas id="chartA"></canvas></div>
+                </div>
+
+                <!-- Style B -->
+                <div class="result-column style-b">
+                    <div class="col-title">🚀 B. 積極成長型</div>
+                    <div class="col-sub">高報酬優先 · CAGR 排序 · MaxDD &lt; 50%</div>
+                    <div id="bestB_stats" class="mini-stats"></div>
+                    <!-- 100萬模擬 -->
+                    <div class="card-title" style="font-size:11px; margin-top:8px;">💰 假設投入 100 萬</div>
+                    <div class="sim-grid" id="simB"></div>
+                    <!-- 排名表 -->
+                    <div class="card-title" style="font-size:11px; margin-top:8px;">📋 策略排名</div>
+                    <div style="overflow-x:auto;">
+                        <table class="strat-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>策略</th>
+                                    <th>CAGR</th>
+                                    <th>MaxDD</th>
+                                    <th>Calmar</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableB"></tbody>
+                        </table>
+                    </div>
+                    <div class="chart-container"><canvas id="chartB"></canvas></div>
+                </div>
+            </div>
+
+            <div style="text-align:center; margin-top:24px;">
+                <button class="btn btn-outline" onclick="goToStep(1)">🔄 研究其他標的</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <script>
+        // === iframe 偵測 ===
+        if (window !== window.parent) {
+            document.body.classList.add('in-iframe');
+        }
+
+        let currentStep = 1;
+        let selectedTicker = '';
+        let taskId = '';
+        let pollTimer = null;
+
+        // 研究策略 → 交易策略的對應表
+        const STRATEGY_MAP = {
+            'trend_ma': { type: 'sma_crossover', mapParams: (best) => ({ fast_period: best[0] || 20, slow_period: best[1] || 60 }) },
+            'breakout': { type: 'sma_crossover', mapParams: (best) => ({ fast_period: best[0] || 40, slow_period: best[1] || 20 }) },
+            'pullback': { type: 'rsi_reversal', mapParams: (best) => ({ rsi_period: best[1] || 14, oversold: best[2] || 30, overbought: 70 }) },
+            'bollinger': { type: 'bollinger_band', mapParams: (best) => ({ period: best[0] || 20, std_dev: best[1] || 2.0 }) },
+            'macd': { type: 'macd_signal', mapParams: (best) => ({ fast_period: best[0] || 12, slow_period: best[1] || 26, signal_period: best[2] || 9 }) },
+        };
+
+        // === Step Navigation ===
+        function goToStep(step) {
+            if (step === 2) {
+                selectedTicker = document.getElementById('tickerInput').value.trim()
+                    || document.getElementById('watchlistSelect').value;
+                if (!selectedTicker) { alert('請先選擇或輸入股票代碼'); return; }
+                checkDataStatus();
+            }
+            currentStep = step;
+            document.querySelectorAll('.step-item').forEach(el => {
+                const s = parseInt(el.dataset.step);
+                el.classList.remove('active', 'done');
+                if (s === step) el.classList.add('active');
+                else if (s < step) el.classList.add('done');
+            });
+            document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('step' + step).classList.add('active');
+        }
+
+        // === Step 1: 載入自選股 ===
+        async function loadWatchlist() {
+            try {
+                const res = await fetch('/api/market/watchlist');
+                const data = await res.json();
+                const sel = document.getElementById('watchlistSelect');
+                sel.innerHTML = '<option value="">-- 請選擇 --</option>';
+                if (data.data && data.data.length > 0) {
+                    data.data.forEach(item => {
+                        const opt = document.createElement('option');
+                        opt.value = item.symbol;
+                        opt.textContent = `${item.symbol} ${item.name || ''}`;
+                        sel.appendChild(opt);
+                    });
+                }
+            } catch (e) { console.error('載入自選股失敗:', e); }
+        }
+
+        document.getElementById('watchlistSelect').addEventListener('change', function () {
+            if (this.value) document.getElementById('tickerInput').value = this.value;
+        });
+
+        // === Step 2: 檢查資料狀態 ===
+        async function checkDataStatus() {
+            const area = document.getElementById('dataStatusArea');
+            const nextBtn = document.getElementById('dataNextBtn');
+            nextBtn.disabled = true;
+            area.innerHTML = `<div class="data-status"><div class="ds-icon"><span class="spinner"></span></div>
+                <div class="ds-info"><h3>檢查 ${selectedTicker} 的資料狀態...</h3><p>正在確認是否已有 5 年 60 分 K 線資料</p></div></div>`;
+            try {
+                const res = await fetch(`/api/research/data-status/${selectedTicker}`);
+                const data = await res.json();
+                if (data.exists) {
+                    area.innerHTML = `<div class="data-status" style="border-left: 3px solid var(--green);">
+                        <div class="ds-icon">✅</div><div class="ds-info"><h3>${selectedTicker} 資料已就緒</h3>
+                        <p>共 ${data.rows.toLocaleString()} 筆 60 分 K 資料，無需重新下載。</p></div></div>`;
+                } else {
+                    area.innerHTML = `<div class="data-status" style="border-left: 3px solid var(--yellow);">
+                        <div class="ds-icon">📥</div><div class="ds-info"><h3>${selectedTicker} 尚無資料</h3>
+                        <p>點擊「開始研究」時將自動下載 5 年 60 分 K 資料。</p></div></div>`;
+                }
+                nextBtn.disabled = false;
+            } catch (e) {
+                area.innerHTML = `<div class="data-status" style="border-left: 3px solid var(--yellow);">
+                    <div class="ds-icon">⚠️</div><div class="ds-info"><h3>無法檢查資料狀態</h3>
+                    <p>可能是 API 尚未啟動，但您仍可繼續研究。</p></div></div>`;
+                nextBtn.disabled = false;
+            }
+        }
+
+        // === Step 3: 載入策略模板 ===
+        async function loadTemplates() {
+            try {
+                const res = await fetch('/api/research/templates');
+                const data = await res.json();
+                const grid = document.getElementById('templateGrid');
+                grid.innerHTML = '';
+                const icons = ['📈', '🔺', '📉', '🎯', '📊'];
+                data.templates.forEach((t, i) => {
+                    grid.innerHTML += `<div class="template-card"><div class="t-name">${icons[i] || '📌'} ${t.name}</div><div class="t-desc">${t.description}</div></div>`;
+                });
+            } catch (e) {
+                document.getElementById('templateGrid').innerHTML =
+                    `<div class="template-card"><div class="t-name">均線趨勢交叉</div><div class="t-desc">快慢線交叉</div></div>
+                     <div class="template-card"><div class="t-name">通道突破</div><div class="t-desc">突破 N 日高點</div></div>
+                     <div class="template-card"><div class="t-name">多頭回檔</div><div class="t-desc">RSI 回踩買進</div></div>
+                     <div class="template-card"><div class="t-name">布林通道回歸</div><div class="t-desc">均值回歸</div></div>
+                     <div class="template-card"><div class="t-name">MACD 趨勢</div><div class="t-desc">MACD 金叉追蹤</div></div>`;
+            }
+        }
+
+        // === Step 4: 啟動研究 ===
+        async function startResearch() {
+            goToStep(4);
+            try {
+                const res = await fetch('/api/research/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticker: selectedTicker }),
+                });
+                const data = await res.json();
+                taskId = data.task_id;
+                pollTimer = setInterval(pollProgress, 2000);
+            } catch (e) {
+                document.getElementById('progressMsg').textContent = '啟動失敗: ' + e.message;
+            }
+        }
+
+        async function pollProgress() {
+            try {
+                const res = await fetch(`/api/research/status/${taskId}`);
+                const data = await res.json();
+                document.getElementById('progressPct').textContent = data.percent + '%';
+                document.getElementById('progressBar').style.width = data.percent + '%';
+                document.getElementById('progressMsg').textContent = data.message || '';
+                if (data.status === 'completed') {
+                    clearInterval(pollTimer);
+                    setTimeout(() => loadResults(), 500);
+                } else if (data.status === 'error') {
+                    clearInterval(pollTimer);
+                    document.getElementById('progressMsg').textContent = '❌ ' + data.message;
+                    document.getElementById('progressPct').textContent = '錯誤';
+                }
+            } catch (e) { /* 靜默等待 */ }
+        }
+
+        // === Step 5: 載入結果 ===
+        async function loadResults() {
+            goToStep(5);
+            try {
+                const res = await fetch(`/api/research/results/${selectedTicker}`);
+                const data = await res.json();
+                document.getElementById('resultTicker').textContent = data.ticker;
+                document.getElementById('resultTimestamp').textContent = '研究時間: ' + new Date(data.timestamp).toLocaleString('zh-TW');
+                renderStyleResults('A', data.style_a, 'bestA_stats', 'tableA', 'chartA', 'simA');
+                renderStyleResults('B', data.style_b, 'bestB_stats', 'tableB', 'chartB', 'simB');
+            } catch (e) {
+                document.getElementById('bestA_stats').innerHTML = '<div class="empty-state">載入失敗</div>';
+            }
+        }
+
+        function renderStyleResults(style, styleData, statsId, tableId, chartId, simId) {
+            const strats = styleData.strategies || [];
+            const statsEl = document.getElementById(statsId);
+            const tableEl = document.getElementById(tableId);
+            const simEl = document.getElementById(simId);
+
+            const validStrats = strats.filter(s => s.final_stats && s.final_stats.cagr_pct !== undefined);
+
+            if (validStrats.length === 0) {
+                statsEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">無符合條件的策略</div>';
+                tableEl.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">—</td></tr>';
+                simEl.innerHTML = '';
+                return;
+            }
+
+            const best = validStrats[0];
+            const s = best.final_stats;
+
+            // 基本統計
+            statsEl.innerHTML = `
+                <div class="mini-stat">
+                    <div class="ms-label">最佳策略</div>
+                    <div class="ms-value" style="font-size:14px; color:var(--text-primary);">${best.strategy_name}</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="ms-label">年化報酬 (CAGR)</div>
+                    <div class="ms-value ${s.cagr_pct >= 0 ? 'ms-positive' : 'ms-negative'}">${s.cagr_pct >= 0 ? '+' : ''}${s.cagr_pct}%</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="ms-label">最大回撤 (MaxDD)</div>
+                    <div class="ms-value ms-negative">${s.max_drawdown_pct}%</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="ms-label">Calmar Ratio</div>
+                    <div class="ms-value" style="color:var(--yellow);">${s.calmar_ratio}</div>
+                </div>`;
+
+            // 💰 100 萬投入模擬
+            const eq = best.oos_equity;
+            if (eq && eq.dates && eq.dates.length > 5) {
+                renderSimulation(simEl, eq);
+            } else {
+                simEl.innerHTML = '<div style="font-size:12px; color:var(--text-muted); text-align:center;">資料不足，無法模擬</div>';
+            }
+
+            // 策略排名表 (含部署按鈕)
+            tableEl.innerHTML = '';
+            validStrats.forEach((strat, i) => {
+                const st = strat.final_stats;
+                const stratId = strat.strategy_id;
+                // 從 windows 取得最佳參數
+                const bestParams = strat.windows ? strat.windows.find(w => w.best_params)?.best_params : '';
+                tableEl.innerHTML += `
+                    <tr>
+                        <td class="${i === 0 ? 'rank-1' : ''}">${i + 1}</td>
+                        <td>${strat.strategy_name}</td>
+                        <td style="color:${(st.cagr_pct || 0) >= 0 ? 'var(--red)' : 'var(--green)'};">${st.cagr_pct || 0}%</td>
+                        <td style="color:var(--green);">${st.max_drawdown_pct || 0}%</td>
+                        <td>${st.calmar_ratio || 0}</td>
+                        <td><button class="btn-deploy" onclick="deployStrategy('${stratId}', '${bestParams}')">🚀 部署</button></td>
+                    </tr>`;
+            });
+
+            // Equity Chart
+            if (eq && eq.dates && eq.dates.length > 0) {
+                drawEquityChart(chartId, eq.dates, eq.values, style);
+            }
+        }
+
+        // === 100 萬投入模擬 ===
+        function renderSimulation(container, equity) {
+            const dates = equity.dates;
+            const values = equity.values;
+            const lastDate = new Date(dates[dates.length - 1]);
+            const lastVal = values[values.length - 1];
+            const initCash = 1000000;
+
+            const periods = [
+                { label: '1 個月前', months: 1 },
+                { label: '3 個月前', months: 3 },
+                { label: '6 個月前', months: 6 },
+                { label: '1 年前', months: 12 },
+            ];
+
+            let html = '';
+            periods.forEach(p => {
+                const targetDate = new Date(lastDate);
+                targetDate.setMonth(targetDate.getMonth() - p.months);
+                // 找最接近的日期
+                let closestIdx = 0;
+                let minDiff = Infinity;
+                dates.forEach((d, i) => {
+                    const diff = Math.abs(new Date(d) - targetDate);
+                    if (diff < minDiff) { minDiff = diff; closestIdx = i; }
+                });
+
+                const startVal = values[closestIdx];
+                if (!startVal || startVal === 0) {
+                    html += `<div class="sim-card">
+                        <div class="sim-period">${p.label}</div>
+                        <div class="sim-amount" style="color:var(--text-muted);">N/A</div>
+                    </div>`;
+                    return;
+                }
+
+                const returnPct = (lastVal / startVal) - 1;
+                const endAmount = initCash * (1 + returnPct);
+                const pnl = endAmount - initCash;
+                const isPositive = pnl >= 0;
+                const color = isPositive ? 'var(--red)' : 'var(--green)';
+
+                html += `<div class="sim-card">
+                    <div class="sim-period">${p.label}</div>
+                    <div class="sim-amount" style="color:${color};">${(endAmount / 10000).toFixed(1)}萬</div>
+                    <div class="sim-pnl" style="color:${color};">${isPositive ? '+' : ''}${(pnl / 10000).toFixed(1)}萬</div>
+                    <div class="sim-pct" style="color:${color};">${isPositive ? '+' : ''}${(returnPct * 100).toFixed(1)}%</div>
+                </div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // === 部署策略至自動交易 ===
+        function deployStrategy(strategyId, bestParamsStr) {
+            // 解析最佳參數（格式如 "(20, 60)" 或 "(14, 30)"）
+            let paramValues = [];
+            try {
+                const cleaned = bestParamsStr.replace(/[()]/g, '');
+                paramValues = cleaned.split(',').map(s => parseFloat(s.trim())).filter(v => !isNaN(v));
+            } catch (e) { }
+
+            const mapping = STRATEGY_MAP[strategyId];
+            if (!mapping) {
+                alert('此策略暫不支援自動部署');
+                return;
+            }
+
+            const deployData = {
+                type: 'DEPLOY_STRATEGY',
+                ticker: selectedTicker,
+                strategyId: strategyId,
+                strategyType: mapping.type,
+                params: mapping.mapParams(paramValues),
+                source: 'research',
+            };
+
+            // 嘗試 postMessage 到父頁面
+            if (window !== window.parent) {
+                window.parent.postMessage(deployData, '*');
+            } else {
+                // 獨立頁面模式：直接跳轉
+                const params = encodeURIComponent(JSON.stringify(deployData));
+                window.location.href = `/?deploy=${params}`;
+            }
+        }
+
+        function drawEquityChart(canvasId, dates, values, style) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const color = style === 'A' ? '#10b981' : '#8b5cf6';
+            const step = Math.max(1, Math.floor(dates.length / 10));
+            const labels = dates.map((d, i) => i % step === 0 ? d.substring(0, 10) : '');
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'OOS Equity',
+                        data: values,
+                        borderColor: color,
+                        backgroundColor: color + '20',
+                        fill: true,
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        tension: 0.3,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: true, ticks: { color: '#5a6478', font: { size: 9 }, maxTicksLimit: 8, maxRotation: 0 }, grid: { display: false } },
+                        y: { display: true, ticks: { color: '#5a6478', font: { size: 9 }, callback: v => (v / 1000000).toFixed(1) + 'M' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+                    }
+                }
+            });
+        }
+
+        // === Init ===
+        document.addEventListener('DOMContentLoaded', () => {
+            loadWatchlist();
+            loadTemplates();
+        });
+    </script>
+</body>
+
+</html>

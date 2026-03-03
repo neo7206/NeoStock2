@@ -82,7 +82,7 @@ async def get_account():
 
     info = client.get_account_info()
     balance = client.get_account_balance()
-    positions = client.get_positions()
+    positions = client.get_positions() or []
 
     return {
         "data": {
@@ -92,3 +92,21 @@ async def get_account():
             "broker_positions": positions,
         }
     }
+
+
+@router.get("/profit_loss")
+async def get_profit_loss(code: str = None):
+    """取得券商端損益明細（每筆未平倉的買入記錄）"""
+    client = app_state.get("api_client")
+    if client is None or not client.is_logged_in:
+        return {"data": []}
+
+    result = client.get_profit_loss()
+    if result is None:
+        return {"data": [], "error": "查詢失敗"}
+
+    # 若指定代碼則篩選
+    if code:
+        result = [r for r in result if r.get("code") == code]
+
+    return {"data": result}

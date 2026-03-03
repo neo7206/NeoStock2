@@ -172,13 +172,28 @@ async def sync_account():
     # 2. 同步持倉
     try:
         broker_positions = client.get_positions()
-        results["positions"] = broker_positions
-
-        if portfolio and broker_positions is not None:
-            # 清除本地持倉，以券商端為準
-            portfolio.sync_from_broker(broker_positions)
+        if broker_positions is None:
+            results["errors"].append("查詢持倉失敗（連線不穩），本次跳過同步以保護現有資料")
+        else:
+            results["positions"] = broker_positions
+            if portfolio:
+                portfolio.sync_from_broker(broker_positions)
     except Exception as e:
         results["errors"].append(f"同步持倉失敗: {e}")
 
     msg = "同步完成" if not results["errors"] else f"同步完成（有 {len(results['errors'])} 個警告）"
     return {"message": msg, "data": results}
+
+
+@router.post("/clear_trades")
+async def clear_trades():
+    """清除所有交易記錄"""
+    portfolio = app_state.get("portfolio")
+    if not portfolio:
+        raise HTTPException(status_code=503, detail="服務未就緒")
+    
+    try:
+        portfolio.delete_all_trades()
+        return {"message": "交易記錄已清除"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

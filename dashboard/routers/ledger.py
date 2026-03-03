@@ -63,8 +63,8 @@ async def get_summary():
     total_pnl = total_asset - initial_capital
     total_pnl_pct = (total_pnl / initial_capital * 100) if initial_capital > 0 else 0
     
-    summary["total_pnl"] = total_pnl
-    summary["total_pnl_pct"] = total_pnl_pct
+    summary["total_pnl"] = round(total_pnl, 2)
+    summary["total_pnl_pct"] = round(total_pnl_pct, 2)
 
     return {"data": summary}
 

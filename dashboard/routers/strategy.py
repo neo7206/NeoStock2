@@ -26,6 +26,9 @@ class BacktestRequest(BaseModel):
     strategy_type: str = "bt_sma_cross"
     params: dict = {}
     cash: float = 1_000_000
+    stop_loss_pct: float = 0.0
+    take_profit_pct: float = 0.0
+    max_position: int = 5
 
 
 @router.get("/list")
@@ -63,6 +66,39 @@ async def create_strategy(req: StrategyCreateRequest):
     raise HTTPException(status_code=400, detail="建立策略失敗")
 
 
+@router.put("/{name}")
+async def update_strategy(name: str, req: StrategyCreateRequest):
+    """更新現有策略（刪除後重建，保留啟用狀態）"""
+    engine = app_state.get("strategy_engine")
+    if engine is None:
+        raise HTTPException(status_code=503, detail="策略引擎未啟動")
+
+    # 取得原策略啟用狀態
+    old_enabled = False
+    with engine._lock:
+        if name in engine._enabled:
+            old_enabled = engine._enabled[name]
+        elif name not in engine._strategies:
+            raise HTTPException(status_code=404, detail=f"找不到策略: {name}")
+
+    # 移除舊策略
+    engine.remove_strategy(name)
+
+    # 重新註冊（使用新名稱，可能改名）
+    new_name = req.name or name
+    success = engine.register_strategy(
+        name=new_name,
+        strategy_type=req.strategy_type,
+        symbols=req.symbols,
+        params=req.params,
+        enabled=old_enabled,
+    )
+
+    if success:
+        return {"message": f"策略 [{new_name}] 更新成功"}
+    raise HTTPException(status_code=400, detail="更新策略失敗")
+
+
 @router.post("/{name}/toggle")
 async def toggle_strategy(name: str, enabled: bool = True):
     """啟停策略"""
@@ -93,6 +129,7 @@ async def delete_strategy(name: str):
     raise HTTPException(status_code=404, detail=f"找不到策略: {name}")
 
 
+
 @router.get("/signals")
 async def get_signals():
     """取得所有策略訊號歷史"""
@@ -104,37 +141,38 @@ async def get_signals():
 
 @router.post("/backtest")
 async def run_backtest(req: BacktestRequest):
-    """執行策略回測"""
-    from strategies.backtrader_bridge import run_backtest as bt_run, BACKTRADER_AVAILABLE
+    """執行策略回測 (使用 BacktestEngine)"""
+    from strategies.backtest_engine import BacktestEngine
+    from strategies.strategy_engine import STRATEGY_REGISTRY
 
-    if not BACKTRADER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Backtrader 未安裝")
+    history_manager = app_state.get("history_manager")
+    if history_manager is None:
+        raise HTTPException(status_code=503, detail="History Manager 未啟動")
 
-    md = app_state.get("market_data")
-    if md is None:
-        raise HTTPException(status_code=503, detail="行情服務未啟動")
-
-    # 取得歷史數據
-    df = md.get_kbars(req.symbol, start=req.start, end=req.end)
-    if df.empty:
-        raise HTTPException(status_code=400, detail="無歷史數據可回測")
-
-    from strategies.backtrader_bridge import BTSmaCross
-    strategy_map = {
-        "bt_sma_cross": BTSmaCross,
-    }
-
-    strategy_cls = strategy_map.get(req.strategy_type)
+    # 1. 取得策略類別
+    strategy_cls = STRATEGY_REGISTRY.get(req.strategy_type)
     if strategy_cls is None:
         raise HTTPException(
             status_code=400,
-            detail=f"不支援的回測策略: {req.strategy_type}",
+            detail=f"找不到策略類型: {req.strategy_type}",
         )
 
-    result = bt_run(
+    # 2. 執行回測
+    engine = BacktestEngine(history_manager)
+    result = engine.run_backtest(
         strategy_cls=strategy_cls,
-        data_df=df,
-        cash=req.cash,
-        strategy_params=req.params or None,
+        params=req.params,
+        symbol=req.symbol,
+        start_date=req.start,
+        end_date=req.end,
+        initial_capital=req.cash,
+        timeframe="1min",
+        stop_loss_pct=req.stop_loss_pct,
+        take_profit_pct=req.take_profit_pct,
+        max_position=req.max_position
     )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
     return {"data": result}

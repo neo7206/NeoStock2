@@ -169,8 +169,14 @@ def main():
     market_data = MarketDataManager(client)
     logger.info("✅ 行情管理已初始化")
 
+    # 3.5 歷史數據管理
+    from core.history_manager import HistoryDataManager
+    history_manager = HistoryDataManager(db, market_data)
+    logger.info("✅ 歷史數據管理已初始化")
+
     # 4. 下單管理
     order_manager = OrderManager(client, settings=settings)
+    order_manager.set_market_data(market_data)  # 注入行情管理器（五檔定價用）
     logger.info("✅ 下單管理已初始化")
 
     # 5. 帳本
@@ -179,6 +185,7 @@ def main():
 
     # 6. 風險管理
     risk_manager = RiskManager(db, settings=settings)
+    order_manager.set_risk_manager(risk_manager)  # 注入風控管理器（下單前檢查用）
     logger.info("✅ 風險管理已初始化")
 
     # 7. ROI 計算
@@ -194,6 +201,43 @@ def main():
     )
     logger.info("✅ 策略引擎已初始化")
 
+    # 9. 市場排程器
+    from core.scheduler import MarketScheduler
+    scheduler = MarketScheduler(settings=settings)
+
+    # 註冊排程回呼
+    scheduler.on("pre_market", lambda: logger.info("📊 盤前準備中..."))
+    scheduler.on("market_open", lambda: logger.info("🟢 開盤！策略引擎已就緒"))
+    scheduler.on("market_close", lambda: logger.info("🔴 収盤！停止策略監控"))
+
+    def _post_market():
+        """盤後結算：同步券商持倉 + 寫入每日快照"""
+        logger.info("📄 盤後結算中...")
+        try:
+            # 同步券商持倉
+            if client.is_logged_in:
+                broker_pos = client.get_positions()
+                if broker_pos is not None:
+                    portfolio.sync_from_broker(broker_pos)
+            # 寫入每日快照
+            portfolio.save_daily_snapshot()
+            logger.info("✅ 盤後結算完成")
+        except Exception as e:
+            logger.error(f"盤後結算失敗: {e}")
+
+    scheduler.on("post_market", _post_market)
+
+    logger.info("✅ 市場排程器已初始化")
+
+    # 10. Telegram 通知
+    from notifications.telegram_notifier import TelegramNotifier
+    notif_cfg = settings.get("notifications", {})
+    notifier = TelegramNotifier(
+        token=notif_cfg.get("telegram_token", ""),
+        chat_id=notif_cfg.get("telegram_chat_id", ""),
+    )
+    logger.info("✅ 通知模組已初始化")
+
     # 行情 → 策略引擎連動
     market_data.on_tick(lambda tick: strategy_engine.process_tick(tick))
 
@@ -201,32 +245,69 @@ def main():
     app_state["db"] = db
     app_state["api_client"] = client
     app_state["market_data"] = market_data
+    app_state["history_manager"] = history_manager
     app_state["order_manager"] = order_manager
     app_state["portfolio"] = portfolio
     app_state["risk_manager"] = risk_manager
     app_state["roi_calculator"] = roi_calc
     app_state["strategy_engine"] = strategy_engine
+    app_state["scheduler"] = scheduler
+    app_state["notifier"] = notifier
+    app_state["settings"] = settings
 
     # --- 串接事件回呼 ---
     def on_trade_filled(order_data: dict):
-        """處理成交回報，寫入帳本"""
+        """處理成交回報，寫入帳本（統一記帳入口）"""
         try:
-            # 避免重複記帳的簡單檢查 (實際應檢查 DB)
-            # 這裡假設 Filled 是最終狀態且只觸發一次 (需依賴 Shioaji 行為)
-            logger.info(f"收到成交回報，寫入帳本: {order_data}")
+            order_id = order_data.get("order_id", "")
+
+            # 防重複記帳：直接查 DB 確認 order_id 是否已存在
+            if order_id:
+                from ledger.models import Trade as TradeModel
+                session = db.get_session()
+                try:
+                    exists = session.query(TradeModel).filter_by(order_id=order_id).first()
+                    if exists:
+                        logger.info(f"跳過重複記帳: order_id={order_id}")
+                        return
+                finally:
+                    session.close()
+
+            # 從 order_manager 快取取得 strategy_name（策略下單時已附加）
+            strategy_name = "manual"
+            with order_manager._lock:
+                cached = order_manager._orders.get(order_id, {})
+                strategy_name = cached.get("strategy_name", "manual")
+
+            logger.info(f"📝 寫入帳本: {order_data['action']} {order_data['symbol']} {order_data['quantity']}張 @ {order_data['price']}")
             portfolio.record_trade(
                 code=order_data["symbol"],
                 action=order_data["action"],
                 price=order_data["price"],
                 quantity=order_data["quantity"],
-                strategy_name="manual", # 或從 order_data 判斷
-                order_id=order_data["order_id"],
+                strategy_name=strategy_name,
+                order_id=order_id,
                 note=f"Auto-recorded from {order_data['status']}"
             )
+
+            # Telegram 推播成交通知
+            if notifier.enabled:
+                notifier.notify_fill(order_data)
         except Exception as e:
             logger.error(f"寫入成交記錄失敗: {e}")
 
     order_manager.on_trade(on_trade_filled)
+
+    # --- #14 異常事件推播（失敗/取消/斷線）---
+    def on_order_status(order_data: dict):
+        """委託狀態變更時推播通知（僅推送失敗和取消）"""
+        if not notifier.enabled:
+            return
+        s = order_data.get("status", "")
+        if s in ("Failed", "Cancelled"):
+            notifier.notify_order(order_data)
+
+    order_manager.on_order(on_order_status)
 
     # --- 自動登入 ---
     api_key = os.getenv("SHIOAJI_API_KEY")
@@ -241,6 +322,33 @@ def main():
             if ca_path:
                 client.activate_ca(ca_path, ca_pass)
                 logger.info("✅ CA 憑證已啟用")
+                
+            # 註冊重連回呼：重連後自動重設 order callback + 行情訂閱
+            def _on_reconnect():
+                logger.info("🔄 重連後重設回呼...")
+                order_manager._is_callback_set = False
+                order_manager._ensure_callbacks()
+                # 重新訂閱行情
+                from ledger.models import Watchlist as WL
+                s = db.get_session()
+                try:
+                    syms = [w.symbol for w in s.query(WL).all()]
+                    if syms:
+                        market_data.init_quote_cache(syms)
+                        logger.info(f"🔄 重新訂閱 {len(syms)} 檔行情")
+                finally:
+                    s.close()
+                # 推播斷線重連通知
+                if notifier.enabled:
+                    notifier.send("⚠️ *連線重建通知*\n系統偵測到斷線並已自動重連成功")
+
+            client.on_reconnect(_on_reconnect)
+
+            # 啟動自動重連監控
+            client.start_auto_reconnect()
+
+            # 啟動排程器
+            scheduler.start()
         except Exception as e:
             logger.error(f"❌ 自動登入失敗: {e}")
     else:
@@ -259,6 +367,32 @@ def main():
             market_data.init_quote_cache(symbols)
     except Exception as e:
         logger.error(f"❌ 自選股訂閱失敗: {e}")
+
+    # --- #16 Graceful Shutdown ---
+    import atexit
+    import signal
+
+    def _shutdown():
+        logger.info("🛑 正在安全關閉...")
+        try:
+            order_manager.stop()
+        except Exception:
+            pass
+        try:
+            client.logout()
+        except Exception:
+            pass
+        logger.info("✅ 已安全關閉")
+
+    atexit.register(_shutdown)
+
+    def _signal_handler(sig, frame):
+        logger.info(f"收到信號 {sig}，開始安全關閉...")
+        _shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
 
     # --- 啟動 Web 伺服器 ---
     app = create_app()
