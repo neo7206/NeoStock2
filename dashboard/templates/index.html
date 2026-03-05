@@ -115,6 +115,11 @@
             padding: 0 24px;
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 56px;
+            /* navbar 高度 */
+            z-index: 99;
+            backdrop-filter: blur(12px);
         }
 
         .tab-btn {
@@ -153,6 +158,29 @@
         .tab-panel.active {
             display: block;
             animation: fadeIn .3s ease;
+        }
+
+        /* === 子頁籤 (更多頁面內) === */
+        .sub-tab-btn {
+            padding: 10px 18px;
+            border: none;
+            background: none;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: var(--transition);
+            font-family: inherit;
+        }
+
+        .sub-tab-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .sub-tab-btn.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
         }
 
         @keyframes fadeIn {
@@ -743,80 +771,95 @@
 
     <!-- Tab 導航 -->
     <div class="tab-bar">
-        <button class="tab-btn active" data-tab="overview">📊 總覽</button>
-        <button class="tab-btn" data-tab="positions">💼 持倉</button>
-        <button class="tab-btn" data-tab="trades">📝 交易記錄</button>
+        <button class="tab-btn active" data-tab="dashboard">📊 儀表板</button>
+        <button class="tab-btn" data-tab="market">📈 行情</button>
         <button class="tab-btn" data-tab="strategies">🤖 策略</button>
-
-        <button class="tab-btn" data-tab="watchlist">📈 自選股</button>
-        <button class="tab-btn" data-tab="history">📜 歷史數據</button>
-        <button class="tab-btn" data-tab="settings">⚙️ 設定</button>
-        <button class="tab-btn" data-tab="research">🔬 策略研究</button>
+        <button class="tab-btn" data-tab="more">⚙️ 更多</button>
     </div>
 
     <!-- 內容 -->
     <div class="content">
 
-        <!-- 總覽 Tab -->
-        <div class="tab-panel active" id="tab-overview">
-            <div class="stats-grid" id="overviewStats">
-                <div class="stat-card">
+        <!-- ===== 📊 儀表板 Tab ===== -->
+        <div class="tab-panel active" id="tab-dashboard">
+
+            <!-- 狀態總覽列：水平緊湊排列 -->
+            <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+                <div class="stat-card" style="flex:1; min-width:140px; padding:12px 16px;">
                     <div class="stat-label">總資產</div>
-                    <div class="stat-value" id="totalAsset">--</div>
+                    <div class="stat-value" id="totalAsset" style="font-size:22px;">--</div>
                     <div class="stat-sub" id="pnlValue"></div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" style="flex:1; min-width:140px; padding:12px 16px;">
                     <div class="stat-label">可用現金</div>
-                    <div class="stat-value" id="availableCash">--</div>
+                    <div class="stat-value" id="availableCash" style="font-size:22px;">--</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" style="flex:1; min-width:140px; padding:12px 16px;">
                     <div class="stat-label">持倉市值</div>
-                    <div class="stat-value" id="marketValue">--</div>
+                    <div class="stat-value" id="marketValue" style="font-size:22px;">--</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" style="flex:1; min-width:140px; padding:12px 16px;">
                     <div class="stat-label">未實現損益</div>
-                    <div class="stat-value" id="unrealizedPnl">--</div>
+                    <div class="stat-value" id="unrealizedPnl" style="font-size:22px;">--</div>
                     <div class="stat-sub" id="unrealizedPnlPct"></div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" style="flex:1; min-width:100px; padding:12px 16px;">
                     <div class="stat-label">已實現損益</div>
-                    <div class="stat-value" id="realizedPnl">--</div>
+                    <div class="stat-value" id="realizedPnl" style="font-size:18px;">--</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" style="flex:1; min-width:100px; padding:12px 16px;">
                     <div class="stat-label">ROI</div>
-                    <div class="stat-value" id="roiPct">--</div>
+                    <div class="stat-value" id="roiPct" style="font-size:18px;">--</div>
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-title">⚠️ 風險摘要</div>
-                <div id="riskSummary" class="empty-state">載入中…</div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">📡 最新策略訊號</div>
-                <div class="table-wrap">
-                    <table id="signalTable">
-                        <thead>
-                            <tr>
-                                <th>時間</th>
-                                <th>策略</th>
-                                <th>動作</th>
-                                <th>標的</th>
-                                <th>價格</th>
-                                <th>原因</th>
-                            </tr>
-                        </thead>
-                        <tbody id="signalBody"></tbody>
-                    </table>
+            <!-- 🚀 一鍵自動交易 -->
+            <div id="autopilotBar"
+                style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; margin-bottom:16px; background:linear-gradient(135deg, rgba(139,92,246,0.12), rgba(59,130,246,0.12)); border:1px solid var(--accent); border-radius:var(--radius);">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <span style="font-size:20px;">🚀</span>
+                    <div>
+                        <div style="font-size:14px; font-weight:700; color:var(--text-primary);">一鍵自動交易</div>
+                        <div id="autopilotDesc" style="font-size:11px; color:var(--text-muted);">選擇模式後一鍵啟動，系統自動執行策略
+                        </div>
+                    </div>
+                    <span id="autopilotStatus"
+                        style="font-size:12px; padding:2px 10px; border-radius:999px; background:rgba(239,68,68,0.15); color:var(--red);">未啟動</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <select id="autopilotPreset" class="form-control" style="width:120px; height:30px; font-size:12px;">
+                        <option value="conservative">🛡️ 穩健型</option>
+                        <option value="aggressive">🚀 積極型</option>
+                    </select>
+                    <button class="btn btn-sm btn-primary" id="autopilotStartBtn" onclick="startAutopilot()"
+                        style="font-size:12px; padding:5px 14px; background:linear-gradient(135deg, #8b5cf6, #3b82f6);">🚀
+                        啟動</button>
+                    <button class="btn btn-sm btn-red" id="autopilotStopBtn" onclick="stopAutopilot()"
+                        style="font-size:12px; padding:5px 14px; display:none;">⏹ 停止</button>
                 </div>
             </div>
-        </div>
 
-        <!-- 持倉 Tab -->
-        <div class="tab-panel" id="tab-positions">
-            <div class="card">
-                <div class="card-title">持倉明細</div>
+            <!-- AutoGuardian 狀態列 -->
+            <div id="guardianBar"
+                style="display:flex; align-items:center; justify-content:space-between; padding:10px 16px; margin-bottom:16px; background:linear-gradient(135deg, rgba(16,185,129,0.08), rgba(59,130,246,0.08)); border:1px solid var(--border); border-radius:var(--radius);">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:16px;">🛡️</span>
+                    <span style="font-size:13px; font-weight:600; color:var(--text-primary);">AutoGuardian</span>
+                    <span id="guardianStatus"
+                        style="font-size:12px; padding:2px 10px; border-radius:999px; background:rgba(16,185,129,0.15); color:var(--green);">運作中</span>
+                    <span style="font-size:11px; color:var(--text-muted);">停損 / 停利 / 移動停利 自動監控</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span id="guardianInfo" style="font-size:11px; color:var(--text-muted);">持倉 <span
+                            id="guardianPosCount">--</span> 檔</span>
+                    <button class="btn btn-sm btn-green" id="guardianToggleBtn" onclick="toggleGuardian()"
+                        style="font-size:11px; padding:4px 12px;">⚡ 已啟動</button>
+                </div>
+            </div>
+
+            <!-- 持倉明細（直接顯示在儀表板） -->
+            <div class="card" style="margin-bottom:16px;">
+                <div class="card-title">💼 持倉明細</div>
                 <div class="table-wrap">
                     <table>
                         <thead>
@@ -835,34 +878,77 @@
                     </table>
                 </div>
             </div>
-        </div>
 
-        <!-- 交易記錄 Tab -->
-        <div class="tab-panel" id="tab-trades">
-            <div class="card">
-                <div class="card-title">交易記錄</div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>時間</th>
-                                <th>代碼</th>
-                                <th>動作</th>
-                                <th>價格</th>
-                                <th>張數</th>
-                                <th>金額</th>
-                                <th>手續費</th>
-                                <th>稅</th>
-                                <th>淨額</th>
-                                <th>損益</th>
-                                <th>策略</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tradeBody"></tbody>
-                    </table>
+            <!-- 雙欄：委託列表 + 風險摘要 -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                <!-- 委託列表 -->
+                <div class="card" style="padding:0;">
+                    <div
+                        style="display:flex; justify-content:space-between; align-items:center; padding:10px 15px; border-bottom:1px solid var(--border);">
+                        <div style="font-weight:bold; font-size:14px; color:var(--text-primary);">📋 委託列表</div>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="wl-table">
+                            <thead>
+                                <tr>
+                                    <th>時間</th>
+                                    <th>代碼</th>
+                                    <th>動作</th>
+                                    <th>價格</th>
+                                    <th>數量</th>
+                                    <th>狀態</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orderBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 風險摘要 + 策略訊號 -->
+                <div>
+                    <div class="card" style="margin-bottom:12px;">
+                        <div class="card-title">⚠️ 風險摘要</div>
+                        <div id="riskSummary" class="empty-state">載入中…</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">📡 最新策略訊號</div>
+                        <div class="table-wrap">
+                            <table id="signalTable">
+                                <thead>
+                                    <tr>
+                                        <th>時間</th>
+                                        <th>策略</th>
+                                        <th>動作</th>
+                                        <th>標的</th>
+                                        <th>價格</th>
+                                        <th>原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="signalBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 資產走勢 + 策略績效 -->
+            <div style="display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-top:16px;">
+                <div class="card">
+                    <div class="card-title">📈 資產走勢</div>
+                    <canvas id="equityChart" style="width:100%; height:200px;"></canvas>
+                    <div id="equityEmpty" class="empty-state" style="display:none;">尚無歷史快照資料</div>
+                </div>
+                <div class="card">
+                    <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>🏆 策略績效（30天）</span>
+                    </div>
+                    <div id="perfBody" class="empty-state">載入中…</div>
                 </div>
             </div>
         </div>
+
+
 
         <!-- 策略 Tab：策略管控中心 -->
         <div class="tab-panel" id="tab-strategies">
@@ -1006,8 +1092,9 @@
 
 
 
-        <!-- 自選股 Tab -->
-        <div class="tab-panel" id="tab-watchlist">
+        <!-- ===== 📈 行情 Tab ===== -->
+        <div class="tab-panel" id="tab-market">
+            <!-- 自選股報價 -->
             <div class="card">
                 <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
                     <span>📈 自選股報價</span>
@@ -1016,7 +1103,6 @@
                             style="padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-size: 13px; outline: none; width: 140px;"
                             onkeyup="if(event.key==='Enter') addWatchlist()">
                         <button class="btn btn-primary btn-sm" onclick="addWatchlist()">＋新增</button>
-                        <!-- 自動更新隱藏但預設開啟 -->
                         <div class="custom-control custom-checkbox" style="display: none;">
                             <input type="checkbox" class="custom-control-input" id="wlAutoRefresh" checked
                                 onchange="toggleWatchlistAutoRefresh(this.checked)">
@@ -1054,7 +1140,7 @@
                 </div>
             </div>
 
-            <!-- 手動下單 (整合至自選股 - 極簡版) -->
+            <!-- 手動下單 -->
             <div class="card" id="orderPanel" style="margin-top: 12px; padding: 10px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <div
@@ -1083,11 +1169,14 @@
                         style="height: 32px; white-space: nowrap;">送出</button>
                 </div>
             </div>
-            <div class="card" style="padding: 0;">
+
+            <!-- 委託列表（行情頁） -->
+            <div class="card" style="margin-top: 12px; padding: 0;">
                 <div
-                    style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-bottom: 1px solid var(--border);">
-                    <div style="font-weight: bold; font-size: 14px; color: var(--text-primary);">委託列表</div>
-                    <!-- 自動更新中，隱藏手動按鈕 -->
+                    style="display:flex; justify-content:space-between; align-items:center; padding:10px 15px; border-bottom:1px solid var(--border);">
+                    <div style="font-weight:bold; font-size:13px; color:var(--text-primary);">📋 委託列表</div>
+                    <button class="btn btn-outline btn-sm" onclick="refreshOrders()"
+                        style="font-size:11px; padding:3px 10px;">🔄 重新整理</button>
                 </div>
                 <div class="table-wrap">
                     <table class="wl-table">
@@ -1102,158 +1191,170 @@
                                 <th>操作</th>
                             </tr>
                         </thead>
-                        <tbody id="orderBody"></tbody>
+                        <tbody id="marketOrderBody"></tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        <!-- 歷史數據 Tab -->
-        <div class="tab-panel" id="tab-history">
-            <div class="card">
-                <div class="card-title">📜 歷史數據管理 (1分K)</div>
-                <div class="table-wrap">
-                    <table id="historyTable">
-                        <thead>
-                            <tr>
-                                <th>代碼</th>
-                                <th>名稱</th>
-                                <th>資料區間</th>
-                                <th>筆數</th>
-                                <th style="text-align: center;">動作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="historyBody"></tbody>
-                    </table>
+        <!-- ===== ⚙️ 更多 Tab ===== -->
+        <div class="tab-panel" id="tab-more">
+            <!-- 子頁籤 -->
+            <div style="display:flex; gap:0; margin-bottom:16px; border-bottom:1px solid var(--border);">
+                <button class="sub-tab-btn active" data-subtab="sub-trades" onclick="switchSubTab(this)">📝
+                    交易紀錄</button>
+                <button class="sub-tab-btn" data-subtab="sub-history" onclick="switchSubTab(this)">📜 歷史數據</button>
+                <button class="sub-tab-btn" data-subtab="sub-settings" onclick="switchSubTab(this)">⚙️ 設定</button>
+            </div>
+
+            <!-- 子面板：交易紀錄 -->
+            <div class="sub-tab-panel active" id="sub-trades">
+                <div class="card">
+                    <div class="card-title">交易記錄</div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>時間</th>
+                                    <th>代碼</th>
+                                    <th>動作</th>
+                                    <th>價格</th>
+                                    <th>張數</th>
+                                    <th>金額</th>
+                                    <th>手續費</th>
+                                    <th>稅</th>
+                                    <th>淨額</th>
+                                    <th>損益</th>
+                                    <th>策略</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tradeBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 子面板：歷史數據 -->
+            <div class="sub-tab-panel" id="sub-history" style="display:none;">
+                <div class="card">
+                    <div class="card-title">📜 歷史數據管理 (1分K)</div>
+                    <div class="table-wrap">
+                        <table id="historyTable">
+                            <thead>
+                                <tr>
+                                    <th>代碼</th>
+                                    <th>名稱</th>
+                                    <th>資料區間</th>
+                                    <th>筆數</th>
+                                    <th style="text-align: center;">動作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 子面板：設定 -->
+            <div class="sub-tab-panel" id="sub-settings" style="display:none;">
+                <div class="card">
+                    <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>💰 帳戶資金設定</span>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-primary" style="padding: 4px 12px; font-size: 13px;"
+                                onclick="saveAccountSettings()">儲存設定</button>
+                            <button class="btn btn-outline" style="padding: 4px 12px; font-size: 13px;"
+                                onclick="syncAccount()">🔄 同步券商</button>
+                            <button class="btn btn-red btn-outline" style="padding: 4px 12px; font-size: 13px;"
+                                onclick="clearTradeRecords()">🗑️ 清除記錄</button>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>初始本金</label>
+                            <input id="setInitialCapital" type="number" class="form-control" placeholder="初始本金">
+                        </div>
+                        <div class="form-group">
+                            <label>可用現金</label>
+                            <input id="setAvailableCash" type="number" class="form-control" placeholder="可用現金">
+                        </div>
+                    </div>
+                    <div style="margin-top:8px; font-size:12px; color:var(--text-muted)">
+                        * 調整「可用現金」將影響下單時的資金檢查與總資產計算。<br>
+                        * 調整「初始本金」將影響 ROI 投報率的計算基準。<br>
+                        * 「清除記錄」僅刪除本地交易歷史，不影響券商端與持倉。
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">💸 交易成本設定</div>
+                    <div class="form-row">
+                        <div class="form-group"><label>手續費率</label><input id="sysFeeRate" type="number" step="0.0001"
+                                value="0.001425"></div>
+                        <div class="form-group"><label>手續費折扣</label><input id="sysFeeDiscount" type="number" step="0.1"
+                                value="0.6"></div>
+                        <div class="form-group"><label>證交稅率</label><input id="sysTaxRate" type="number" step="0.001"
+                                value="0.003"></div>
+                        <div class="form-group"><label>最低手續費</label><input id="sysMinFee" type="number" value="20">
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">🛡️ 風險管理設定</div>
+                    <div class="form-row">
+                        <div class="form-group"><label>單一部位佔比上限</label><input id="sysMaxPosPct" type="number"
+                                step="0.01" value="0.25"></div>
+                        <div class="form-group"><label>每日虧損上限 (元)</label><input id="sysMaxDailyLoss" type="number"
+                                value="10000"></div>
+                        <div class="form-group"><label>預設停損 %</label><input id="sysStopLoss" type="number" step="0.01"
+                                value="0.05"></div>
+                        <div class="form-group"><label>預設停利 %</label><input id="sysTakeProfit" type="number" step="0.01"
+                                value="0.10"></div>
+                        <div class="form-group"><label>最大持倉數</label><input id="sysMaxPositions" type="number"
+                                value="10"></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">🤖 策略引擎設定</div>
+                    <div class="form-row">
+                        <div class="form-group"><label>監控頻率 (秒)</label><input id="sysMonitorInterval" type="number"
+                                value="5"></div>
+                        <div class="form-group">
+                            <label>預設委託類型</label>
+                            <select id="sysOrderType">
+                                <option value="LMT">LMT (限價)</option>
+                                <option value="MKT">MKT (市價)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>預設委託單位</label>
+                            <select id="sysOrderLot">
+                                <option value="Common">Common (整股)</option>
+                                <option value="Odd">Odd (零股)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin:12px 0"><button class="btn btn-primary" onclick="saveSystemSettings()">💾
+                        儲存系統設定</button></div>
+                <div class="card">
+                    <div class="card-title">⚙️ 系統資訊</div>
+                    <div style="font-size:13px; color:var(--text-muted)">
+                        <p>版本: v1.0.0</p>
+                        <p>API 狀態: <span id="apiStatus">檢查中…</span></p>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- 設定 Tab -->
-        <div class="tab-panel" id="tab-settings">
-            <div class="card">
-                <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>💰 帳戶資金設定</span>
-                    <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 13px;"
-                            onclick="saveAccountSettings()">儲存設定</button>
-                        <button class="btn btn-outline" style="padding: 4px 12px; font-size: 13px;"
-                            onclick="syncAccount()">🔄 同步券商</button>
-                        <button class="btn btn-red btn-outline" style="padding: 4px 12px; font-size: 13px;"
-                            onclick="clearTradeRecords()">🗑️ 清除記錄</button>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>初始本金</label>
-                        <input id="setInitialCapital" type="number" class="form-control" placeholder="初始本金">
-                    </div>
-                    <div class="form-group">
-                        <label>可用現金</label>
-                        <input id="setAvailableCash" type="number" class="form-control" placeholder="可用現金">
-                    </div>
-                </div>
-                <div style="margin-top:8px; font-size:12px; color:var(--text-muted)">
-                    * 調整「可用現金」將影響下單時的資金檢查與總資產計算。<br>
-                    * 調整「初始本金」將影響 ROI 投報率的計算基準。<br>
-                    * 「清除記錄」僅刪除本地交易歷史，不影響券商端與持倉。
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">💸 交易成本設定</div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>手續費率</label>
-                        <input id="sysFeeRate" type="number" step="0.0001" value="0.001425">
-                    </div>
-                    <div class="form-group">
-                        <label>手續費折扣</label>
-                        <input id="sysFeeDiscount" type="number" step="0.1" value="0.6">
-                    </div>
-                    <div class="form-group">
-                        <label>證交稅率</label>
-                        <input id="sysTaxRate" type="number" step="0.001" value="0.003">
-                    </div>
-                    <div class="form-group">
-                        <label>最低手續費</label>
-                        <input id="sysMinFee" type="number" value="20">
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">🛡️ 風險管理設定</div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>單一部位佔比上限</label>
-                        <input id="sysMaxPosPct" type="number" step="0.01" value="0.25">
-                    </div>
-                    <div class="form-group">
-                        <label>每日虧損上限 (元)</label>
-                        <input id="sysMaxDailyLoss" type="number" value="10000">
-                    </div>
-                    <div class="form-group">
-                        <label>預設停損 %</label>
-                        <input id="sysStopLoss" type="number" step="0.01" value="0.05">
-                    </div>
-                    <div class="form-group">
-                        <label>預設停利 %</label>
-                        <input id="sysTakeProfit" type="number" step="0.01" value="0.10">
-                    </div>
-                    <div class="form-group">
-                        <label>最大持倉數</label>
-                        <input id="sysMaxPositions" type="number" value="10">
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">🤖 策略引擎設定</div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>監控頻率 (秒)</label>
-                        <input id="sysMonitorInterval" type="number" value="5">
-                    </div>
-                    <div class="form-group">
-                        <label>預設委託類型</label>
-                        <select id="sysOrderType">
-                            <option value="LMT">LMT (限價)</option>
-                            <option value="MKT">MKT (市價)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>預設委託單位</label>
-                        <select id="sysOrderLot">
-                            <option value="Common">Common (整股)</option>
-                            <option value="Odd">Odd (零股)</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <div style="margin:12px 0">
-                <button class="btn btn-primary" onclick="saveSystemSettings()">💾 儲存系統設定</button>
-            </div>
-
-            <div class="card">
-                <div class="card-title">⚙️ 系統資訊</div>
-                <div style="font-size:13px; color:var(--text-muted)">
-                    <p>版本: v1.0.0</p>
-                    <p>API 狀態: <span id="apiStatus">檢查中…</span></p>
-                </div>
-            </div>
-        </div>
-
-        <!-- 策略研究 Tab -->
-        <div class="tab-panel" id="tab-research">
-            <div class="card" style="padding:0; overflow:hidden; border:none; height: calc(100vh - 140px);">
-                <iframe id="researchFrame" style="width:100%; height:100%; border:none; background:var(--bg-primary);"
-                    loading="lazy"></iframe>
-            </div>
+        <!-- 策略研究 iframe (隱藏，供研究功能使用) -->
+        <div style="display:none;">
+            <iframe id="researchFrame" style="width:100%; height:100%; border:none; background:var(--bg-primary);"
+                loading="lazy"></iframe>
         </div>
 
     </div>
+
+
 
     <script>
         // === Tab 切換 ===
@@ -1267,38 +1368,141 @@
                 btn.classList.add('active');
                 document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
 
-
-                // 離開自選股 Tab 時停止刷新
+                // 離開行情 Tab 時停止刷新
                 if (watchlistTimer) { clearInterval(watchlistTimer); watchlistTimer = null; }
-                // 離開歷史數據 Tab 時停止刷新
                 if (typeof historyTimer !== 'undefined' && historyTimer) { clearInterval(historyTimer); historyTimer = null; }
 
                 const tab = btn.dataset.tab;
-                if (tab === 'overview') loadOverview();
-                else if (tab === 'positions') loadPositions();
-                else if (tab === 'trades') loadTrades();
-                else if (tab === 'strategies') loadStrategies();
-                else if (tab === 'watchlist') {
+                if (tab === 'dashboard') {
+                    loadOverview();
+                    loadPositions();
+                    refreshOrders();
+                }
+                else if (tab === 'market') {
                     loadWatchlistQuotes();
+                    refreshOrders();
                     if (document.getElementById('wlAutoRefresh').checked) {
                         watchlistTimer = setInterval(loadWatchlistQuotes, 1000);
                     }
                 }
-                else if (tab === 'history') {
-                    loadHistoryStatus();
-                    if (fetchingSymbols.size > 0) {
-                        startHistoryPolling();
-                    }
-                }
-                else if (tab === 'settings') loadAccountSettings();
-                else if (tab === 'research') {
-                    const rf = document.getElementById('researchFrame');
-                    if (!rf.src || rf.src === 'about:blank' || !rf.src.includes('/research')) {
-                        rf.src = '/research';
+                else if (tab === 'strategies') loadStrategies();
+                else if (tab === 'more') {
+                    // 根據目前的子頁籤載入對應資料
+                    const activeSubTab = document.querySelector('.sub-tab-btn.active');
+                    if (activeSubTab) {
+                        const subTab = activeSubTab.dataset.subtab;
+                        if (subTab === 'sub-trades') loadTrades();
+                        else if (subTab === 'sub-history') loadHistoryStatus();
+                        else if (subTab === 'sub-settings') loadAccountSettings();
+                    } else {
+                        loadTrades();
                     }
                 }
             });
         });
+
+        // === 子頁籤切換 ===
+        function switchSubTab(btn) {
+            document.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.sub-tab-panel').forEach(p => { p.style.display = 'none'; p.classList.remove('active'); });
+            btn.classList.add('active');
+            const panel = document.getElementById(btn.dataset.subtab);
+            panel.style.display = 'block';
+            panel.classList.add('active');
+            // 載入對應資料
+            const subTab = btn.dataset.subtab;
+            if (subTab === 'sub-trades') loadTrades();
+            else if (subTab === 'sub-history') {
+                loadHistoryStatus();
+                if (fetchingSymbols.size > 0) startHistoryPolling();
+            }
+            else if (subTab === 'sub-settings') loadAccountSettings();
+        }
+
+        // === AutoGuardian 切換 ===
+        let guardianEnabled = true;
+        function toggleGuardian() {
+            guardianEnabled = !guardianEnabled;
+            const btn = document.getElementById('guardianToggleBtn');
+            const status = document.getElementById('guardianStatus');
+            if (guardianEnabled) {
+                btn.textContent = '⚡ 已啟動';
+                btn.className = 'btn btn-sm btn-green';
+                status.textContent = '運作中';
+                status.style.background = 'rgba(16,185,129,0.15)';
+                status.style.color = 'var(--green)';
+            } else {
+                btn.textContent = '⏸️ 已暫停';
+                btn.className = 'btn btn-sm btn-outline';
+                status.textContent = '已暫停';
+                status.style.background = 'rgba(239,68,68,0.15)';
+                status.style.color = 'var(--red)';
+            }
+        }
+
+        // === Autopilot 一鍵自動交易 ===
+        async function startAutopilot() {
+            const preset = document.getElementById('autopilotPreset').value;
+            const btn = document.getElementById('autopilotStartBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ 部署中...';
+
+            const res = await api('/autopilot/start', {
+                method: 'POST',
+                body: JSON.stringify({ preset }),
+            });
+
+            btn.disabled = false;
+            if (res?.data) {
+                toast(`✅ ${res.data.preset_name} 已啟動 (${res.data.strategy_count} 個策略)`, 'success', 4000);
+                checkAutopilotStatus();
+                // 重新載入策略列表
+                if (typeof loadStrategies === 'function') loadStrategies();
+            } else {
+                toast('啟動失敗: ' + (res?.detail || '未知錯誤'), 'error');
+                btn.textContent = '🚀 啟動';
+            }
+        }
+
+        async function stopAutopilot() {
+            if (!confirm('確定要停止所有自動策略嗎？')) return;
+
+            const res = await api('/autopilot/stop', { method: 'POST' });
+            if (res?.data) {
+                toast(`⏹ 已停止 ${res.data.stopped_strategies.length} 個策略`, 'info');
+                checkAutopilotStatus();
+                if (typeof loadStrategies === 'function') loadStrategies();
+            }
+        }
+
+        async function checkAutopilotStatus() {
+            const res = await api('/autopilot/status');
+            const statusEl = document.getElementById('autopilotStatus');
+            const startBtn = document.getElementById('autopilotStartBtn');
+            const stopBtn = document.getElementById('autopilotStopBtn');
+            const descEl = document.getElementById('autopilotDesc');
+
+            if (res?.data?.active) {
+                const d = res.data;
+                const presetNames = { conservative: '🛡️ 穩健型', aggressive: '🚀 積極型' };
+                statusEl.textContent = '運行中';
+                statusEl.style.background = 'rgba(16,185,129,0.15)';
+                statusEl.style.color = 'var(--green)';
+                descEl.textContent = `${presetNames[d.current_preset] || '自訂'} — ${d.strategy_count} 個策略`;
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'inline-flex';
+                document.getElementById('autopilotPreset').style.display = 'none';
+            } else {
+                statusEl.textContent = '未啟動';
+                statusEl.style.background = 'rgba(239,68,68,0.15)';
+                statusEl.style.color = 'var(--red)';
+                descEl.textContent = '選擇模式後一鍵啟動，系統自動執行策略';
+                startBtn.style.display = 'inline-flex';
+                startBtn.textContent = '🚀 啟動';
+                stopBtn.style.display = 'none';
+                document.getElementById('autopilotPreset').style.display = 'inline-flex';
+            }
+        }
 
         // === 工具函数 ===
         const fmt = (n) => n != null ? Number(n).toLocaleString('zh-TW') : '--';
@@ -1328,14 +1532,23 @@
         }
 
         async function api(path, opts = {}) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超時
             try {
                 const res = await fetch('/api' + path, {
                     headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
                     ...opts,
                 });
+                clearTimeout(timeoutId);
                 return await res.json();
             } catch (e) {
-                console.error('API 錯誤:', path, e);
+                clearTimeout(timeoutId);
+                if (e.name === 'AbortError') {
+                    console.warn('API 超時:', path);
+                } else {
+                    console.error('API 錯誤:', path, e);
+                }
                 return null;
             }
         }
@@ -1404,6 +1617,7 @@
         }
 
         let _positionData = {};  // 快取持倉資料供展開使用
+        const _expandedPositions = new Set(); // 追蹤已展開的持倉代碼
 
         async function loadPositions() {
             const res = await api('/ledger/positions');
@@ -1415,14 +1629,33 @@
             _positionData = {};
             res.data.forEach(p => { _positionData[p.code] = p; });
 
-            document.getElementById('positionBody').innerHTML = res.data.map(p => `
+            // 記住目前展開的代碼（保留 Set 中的值）
+            // 重新渲染主列
+            document.getElementById('positionBody').innerHTML = res.data.map(p => {
+                const isExpanded = _expandedPositions.has(p.code);
+                return `
             <tr class="pos-row" style="cursor:pointer;" onclick="togglePositionDetail('${p.code}', this)" title="點擊展開買入明細">
-                <td><b>${p.code}</b> <span style="font-size:10px;color:var(--text-muted);">▶</span></td><td>${p.name || ''}</td><td>${p.quantity}</td>
+                <td><b>${p.code}</b> <span style="font-size:10px;color:var(--text-muted);">${isExpanded ? '▼' : '▶'}</span></td><td>${p.name || ''}</td><td>${p.quantity}</td>
                 <td>${fmt(p.avg_cost)}</td><td>${fmt(p.current_price)}</td><td>${fmt(p.market_value)}</td>
                 <td class="${pnlClass(p.unrealized_pnl)}">${fmt(p.unrealized_pnl)}</td>
                 <td><span class="badge ${pnlBadge(p.unrealized_pnl_pct)}">${fmtPct(p.unrealized_pnl_pct)}</span></td>
-            </tr>
-        `).join('');
+            </tr>`;
+            }).join('');
+
+            // 自動恢復已展開的明細列
+            for (const code of _expandedPositions) {
+                const rowEl = document.querySelector(`.pos-row td b`);
+                const rows = document.querySelectorAll('.pos-row');
+                for (const row of rows) {
+                    const codeEl = row.querySelector('b');
+                    if (codeEl && codeEl.textContent === code) {
+                        // 直接展開（不 toggle，因為目前沒有明細列）
+                        _expandedPositions.delete(code); // 先移除，togglePositionDetail 會再加回來
+                        togglePositionDetail(code, row);
+                        break;
+                    }
+                }
+            }
         }
 
         async function togglePositionDetail(code, rowEl) {
@@ -1431,9 +1664,11 @@
             if (existing.length) {
                 existing.forEach(el => el.remove());
                 rowEl.querySelector('span').textContent = '▶';
+                _expandedPositions.delete(code);
                 return;
             }
             rowEl.querySelector('span').textContent = '▼';
+            _expandedPositions.add(code);
 
             // 插入載入中提示列
             const loadingRow = document.createElement('tr');
@@ -1937,17 +2172,18 @@
 
         async function refreshOrders() {
             try {
-                // 自動更新不需每次都呼叫 update API (由後端排程或此處 polling)
-                // 這裡採用: 先要後端去 server 更新狀態，再拿 DB 資料
-                await api('/trading/orders/update', { method: 'POST' });
-                const res = await api('/trading/orders');
+                // 從 broker 同步最新狀態並直接使用回傳的資料
+                const res = await api('/trading/orders/update', { method: 'POST' });
 
+                const emptyHtml = '<tr><td colspan="7" class="empty-state">';
                 if (!res?.data?.length) {
-                    document.getElementById('orderBody').innerHTML = '<tr><td colspan="7" class="empty-state">尚無委託</td></tr>';
+                    document.getElementById('orderBody').innerHTML = emptyHtml + '尚無委託</td></tr>';
+                    const mktEmpty = document.getElementById('marketOrderBody');
+                    if (mktEmpty) mktEmpty.innerHTML = emptyHtml + '尚無委託</td></tr>';
                     return;
                 }
 
-                document.getElementById('orderBody').innerHTML = res.data.map(o => {
+                const rowsHtml = res.data.map(o => {
                     const canCancel = ['PendingSubmit', 'PreSubmitted', 'Submitted', 'PartFilled'].includes(o.status);
                     const statusText = statusMap[o.status] || o.status;
 
@@ -1964,6 +2200,9 @@
                         </td>
                     </tr>
                 `}).join('');
+                document.getElementById('orderBody').innerHTML = rowsHtml;
+                const mktBody = document.getElementById('marketOrderBody');
+                if (mktBody) mktBody.innerHTML = rowsHtml;
             } catch (e) {
                 console.error("Auto refresh failed", e);
             }
@@ -1980,8 +2219,8 @@
             }
         }
 
-        // 啟動自動更新 (每 1 秒)
-        setInterval(refreshOrders, 1000);
+        // 啟動自動更新 (每 10 秒，避免過度頻繁呼叫 broker API)
+        setInterval(refreshOrders, 10000);
         // 初始載入
         refreshOrders();
 
@@ -2668,20 +2907,89 @@
 
 
 
+        // === 資產走勢圖（純 Canvas）===
+        async function loadEquityChart() {
+            const res = await api('/ledger/snapshots?limit=60');
+            const canvas = document.getElementById('equityChart');
+            const emptyEl = document.getElementById('equityEmpty');
+            if (!res?.data?.length || res.data.length < 2) {
+                canvas.style.display = 'none';
+                if (emptyEl) emptyEl.style.display = 'block';
+                return;
+            }
+            canvas.style.display = 'block';
+            if (emptyEl) emptyEl.style.display = 'none';
+            const data = res.data.reverse();
+            const labels = data.map(d => d.date?.slice(5) || '');
+            const values = data.map(d => d.total_asset || 0);
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = 200 * dpr;
+            ctx.scale(dpr, dpr);
+            const W = rect.width, H = 200;
+            const minV = Math.min(...values) * 0.998;
+            const maxV = Math.max(...values) * 1.002;
+            const rangeV = maxV - minV || 1;
+            const padL = 10, padR = 10, padT = 15, padB = 25;
+            const chartW = W - padL - padR, chartH = H - padT - padB;
+            ctx.clearRect(0, 0, W, H);
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) { const y = padT + (chartH/4)*i; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke(); }
+            const grad = ctx.createLinearGradient(0, padT, 0, H-padB);
+            grad.addColorStop(0, 'rgba(59,130,246,0.25)'); grad.addColorStop(1, 'rgba(59,130,246,0.02)');
+            ctx.beginPath();
+            values.forEach((v,i) => { const x = padL+(i/(values.length-1))*chartW; const y = padT+(1-(v-minV)/rangeV)*chartH; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+            ctx.lineTo(padL+chartW, padT+chartH); ctx.lineTo(padL, padT+chartH); ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
+            ctx.beginPath(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2;
+            values.forEach((v,i) => { const x = padL+(i/(values.length-1))*chartW; const y = padT+(1-(v-minV)/rangeV)*chartH; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+            ctx.stroke();
+            ctx.fillStyle = '#888'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            const step = Math.max(1, Math.floor(labels.length/6));
+            for (let i = 0; i < labels.length; i += step) { const x = padL+(i/(values.length-1))*chartW; ctx.fillText(labels[i], x, H-5); }
+            ctx.fillStyle = '#3b82f6'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'right';
+            ctx.fillText(fmt(Math.round(values[values.length-1])), W-padR, padT+5);
+        }
+
+        // === 策略績效 ===
+        async function loadPerformance() {
+            const res = await api('/ledger/performance?days=30');
+            const el = document.getElementById('perfBody');
+            if (!res?.data?.by_strategy?.length) { el.innerHTML = '<div class="empty-state" style="padding:20px;">尚無交易記錄</div>'; return; }
+            const stats = res.data.by_strategy; const alerts = res.data.alerts || [];
+            let html = '<div style="display:flex;flex-direction:column;gap:8px;padding:4px 0;">';
+            for (const s of stats) {
+                const emoji = s.total_pnl >= 0 ? '🟢' : '🔴';
+                const pnlColor = s.total_pnl >= 0 ? 'var(--red)' : 'var(--green)';
+                html += '<div style="padding:8px 12px;background:var(--bg-primary);border-radius:var(--radius-sm);border:1px solid var(--border);"><div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:13px;font-weight:600;">' + emoji + ' ' + s.strategy_name + '</span><span style="font-size:13px;font-weight:700;color:' + pnlColor + ';">' + (s.total_pnl >= 0 ? '+' : '') + fmt(s.total_pnl) + '</span></div><div style="display:flex;gap:12px;margin-top:4px;font-size:11px;color:var(--text-muted);"><span>勝率 ' + (s.win_rate*100).toFixed(0) + '%</span><span>交易 ' + s.closed_trades + '筆</span><span>盈虧比 ' + s.win_loss_ratio + '</span></div></div>';
+            }
+            if (alerts.length > 0) { html += '<div style="margin-top:4px;">'; for (const a of alerts) { html += '<div style="padding:6px 10px;font-size:11px;color:#f59e0b;background:rgba(245,158,11,0.1);border-radius:var(--radius-sm);margin-top:4px;">⚠️ ' + a.message + '</div>'; } html += '</div>'; }
+            html += '</div>'; el.innerHTML = html;
+        }
+
         // === 初始載入 ===
         checkHealth();
         loadOverview();
         loadPositions();
-        loadTrades();
-        loadStrategies();
         refreshOrders();
+        loadEquityChart();
+        loadPerformance();
+        checkAutopilotStatus();
 
-        // 自動重新整理（30秒）
+        // 自動重新整理（30秒）—— 不含 refreshOrders（已有獨立 10 秒定時器）
         setInterval(() => {
             checkHealth();
             loadOverview();
             loadPositions();
         }, 30000);
+
+        // 更新 AutoGuardian 持倉數
+        setInterval(() => {
+            const cnt = document.getElementById('guardianPosCount');
+            const rows = document.querySelectorAll('#positionBody .pos-row');
+            if (cnt) cnt.textContent = rows.length;
+        }, 5000);
     </script>
 </body>
 

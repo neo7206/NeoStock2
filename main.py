@@ -183,6 +183,7 @@ def main():
     portfolio = Portfolio(db, settings=settings)
     logger.info("✅ 帳本已初始化")
 
+
     # 6. 風險管理
     risk_manager = RiskManager(db, settings=settings)
     order_manager.set_risk_manager(risk_manager)  # 注入風控管理器（下單前檢查用）
@@ -199,19 +200,63 @@ def main():
         risk_manager=risk_manager,
         settings=settings,
     )
-    logger.info("✅ 策略引擎已初始化")
+    # 自動載入上次的策略配置
+    loaded_count = strategy_engine.load_saved_strategies()
+    logger.info(f"✅ 策略引擎已初始化（載入 {loaded_count} 個策略）")
 
     # 9. 市場排程器
     from core.scheduler import MarketScheduler
-    scheduler = MarketScheduler(settings=settings)
+    scheduler = MarketScheduler(settings=settings, market_data=market_data)
 
     # 註冊排程回呼
-    scheduler.on("pre_market", lambda: logger.info("📊 盤前準備中..."))
+    def _pre_market():
+        logger.info("📊 盤前準備中...")
+        # 盤前自動掃描跨日策略
+        try:
+            strategy_engine.run_daily_scan(market_data=market_data)
+        except Exception as e:
+            logger.error(f"盤前策略掃描失敗: {e}")
+
+    scheduler.on("pre_market", _pre_market)
     scheduler.on("market_open", lambda: logger.info("🟢 開盤！策略引擎已就緒"))
     scheduler.on("market_close", lambda: logger.info("🔴 収盤！停止策略監控"))
 
+    # 10. AutoGuardian — 盤中自動停損停利監控
+    from core.auto_guardian import AutoGuardian
+    auto_guardian = AutoGuardian(
+        portfolio=portfolio,
+        risk_manager=risk_manager,
+        order_manager=order_manager,
+        strategy_engine=strategy_engine,
+        settings=settings,
+    )
+    # 開盤啟動 / 収盤停止
+    scheduler.on("market_open", auto_guardian.start)
+    scheduler.on("market_close", auto_guardian.stop)
+    logger.info("✅ AutoGuardian 已初始化")
+
+    # 11. 部位管理器
+    from ledger.position_sizer import PositionSizer
+    position_sizer = PositionSizer(settings=settings)
+    strategy_engine.position_sizer = position_sizer  # 注入到策略引擎
+    logger.info("✅ 部位管理器已初始化")
+
+    # 12. 績效報告
+    from ledger.performance_report import PerformanceReport
+    perf_report = PerformanceReport(db)
+    logger.info("✅ 績效報告模組已初始化")
+
+    # 10. Telegram 通知（必須在 _post_market 之前初始化，因閃包中使用了 notifier）
+    from notifications.telegram_notifier import TelegramNotifier
+    notif_cfg = settings.get("notifications", {})
+    notifier = TelegramNotifier(
+        token=notif_cfg.get("telegram_token", ""),
+        chat_id=notif_cfg.get("telegram_chat_id", ""),
+    )
+    logger.info("✅ 通知模組已初始化")
+
     def _post_market():
-        """盤後結算：同步券商持倉 + 寫入每日快照"""
+        """盤後結算：同步券商持倉 + 寫入每日快照 + 績效報告"""
         logger.info("📄 盤後結算中...")
         try:
             # 同步券商持倉
@@ -220,7 +265,16 @@ def main():
                 if broker_pos is not None:
                     portfolio.sync_from_broker(broker_pos)
             # 寫入每日快照
-            portfolio.save_daily_snapshot()
+            portfolio.take_daily_snapshot()
+            # 產生績效報告並推播
+            try:
+                report = perf_report.generate(days=7)
+                if notifier.enabled:
+                    msg = perf_report.format_telegram_report(report)
+                    notifier.send(msg)
+                    logger.info("✅ 週報已推播")
+            except Exception as re:
+                logger.error(f"績效報告產生失敗: {re}")
             logger.info("✅ 盤後結算完成")
         except Exception as e:
             logger.error(f"盤後結算失敗: {e}")
@@ -229,14 +283,8 @@ def main():
 
     logger.info("✅ 市場排程器已初始化")
 
-    # 10. Telegram 通知
-    from notifications.telegram_notifier import TelegramNotifier
-    notif_cfg = settings.get("notifications", {})
-    notifier = TelegramNotifier(
-        token=notif_cfg.get("telegram_token", ""),
-        chat_id=notif_cfg.get("telegram_chat_id", ""),
-    )
-    logger.info("✅ 通知模組已初始化")
+    # 注入 notifier 到 AutoGuardian
+    auto_guardian.notifier = notifier
 
     # 行情 → 策略引擎連動
     market_data.on_tick(lambda tick: strategy_engine.process_tick(tick))
@@ -253,6 +301,9 @@ def main():
     app_state["strategy_engine"] = strategy_engine
     app_state["scheduler"] = scheduler
     app_state["notifier"] = notifier
+    app_state["auto_guardian"] = auto_guardian
+    app_state["position_sizer"] = position_sizer
+    app_state["perf_report"] = perf_report
     app_state["settings"] = settings
 
     # --- 串接事件回呼 ---
@@ -322,6 +373,34 @@ def main():
             if ca_path:
                 client.activate_ca(ca_path, ca_pass)
                 logger.info("✅ CA 憑證已啟用")
+
+            # --- 登入後同步券商持倉（券商 = 唯一權威源）---
+            try:
+                raw_positions = client.api.list_positions(client.api.stock_account)
+                broker_positions = []
+                for p in raw_positions:
+                    code = getattr(p, 'code', '')
+                    qty = getattr(p, 'quantity', 0)
+                    price = getattr(p, 'price', 0)       # 均價
+                    last_price = getattr(p, 'last_price', price)
+                    pnl = getattr(p, 'pnl', 0)
+                    direction = str(getattr(p, 'direction', ''))
+                    if 'Buy' not in direction and 'Action.Buy' not in direction:
+                        continue
+                    if qty <= 0:
+                        continue
+                    broker_positions.append({
+                        "code": code,
+                        "quantity": qty,
+                        "price": price,
+                        "last_price": last_price,
+                        "pnl": pnl,
+                        "name": "",
+                    })
+                portfolio.sync_from_broker(broker_positions)
+                logger.info(f"✅ 券商持倉已同步（{len(broker_positions)} 筆）")
+            except Exception as e:
+                logger.warning(f"⚠️ 券商持倉同步失敗（不影響啟動）: {e}")
                 
             # 註冊重連回呼：重連後自動重設 order callback + 行情訂閱
             def _on_reconnect():
@@ -374,6 +453,14 @@ def main():
 
     def _shutdown():
         logger.info("🛑 正在安全關閉...")
+        try:
+            auto_guardian.stop()
+        except Exception:
+            pass
+        try:
+            scheduler.stop()
+        except Exception:
+            pass
         try:
             order_manager.stop()
         except Exception:

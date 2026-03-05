@@ -118,8 +118,6 @@ async def add_watchlist(item: WatchlistAdd):
     if not db:
         raise HTTPException(status_code=503, detail="資料庫未連接")
 
-    # 自動取得中文名稱
-    name = item.name
     # 自動取得中文名稱 & 啟動訂閱
     name = item.name
     md = app_state.get("market_data")

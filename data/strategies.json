@@ -1,0 +1,34 @@
+[
+  {
+    "name": "穩健_0050均線",
+    "strategy_type": "swing_trend_ma",
+    "symbols": [
+      "0050"
+    ],
+    "params": {
+      "fast_ma": 20,
+      "slow_ma": 60,
+      "quantity": 1,
+      "fast_period": 10,
+      "slow_period": 30,
+      "lot_size": 1
+    },
+    "enabled": true
+  },
+  {
+    "name": "穩健_2330均線",
+    "strategy_type": "swing_trend_ma",
+    "symbols": [
+      "2330"
+    ],
+    "params": {
+      "fast_ma": 20,
+      "slow_ma": 60,
+      "quantity": 1,
+      "fast_period": 10,
+      "slow_period": 30,
+      "lot_size": 1
+    },
+    "enabled": true
+  }
+]

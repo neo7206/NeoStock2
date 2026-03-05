@@ -352,21 +352,30 @@ class ShioajiClient:
         # 1. 先登出清理
         self.logout()
         
-        # 2. 重新登入
+        # 2. 重置 stop_event，以便重啟自動重連監控
+        self._stop_event.clear()
+        
+        # 3. 重建 API 實例（logout 不會清除 _api，必須手動重建）
+        self._api = None
+        
+        # 4. 重新登入
         if self.login():
-            # 3. 重新啟用 CA
+            # 5. 重新啟用 CA
             ca_path = os.getenv("SHIOAJI_CA_PATH")
             ca_pass = os.getenv("SHIOAJI_CA_PASSWORD")
             if ca_path and ca_pass:
                 if not self.activate_ca(ca_path, ca_pass):
                     logger.warning("重連成功但 CA 啟用失敗")
             
-            # 4. 觸發所有重連回呼（重設 order callback、行情訂閱等）
+            # 6. 觸發所有重連回呼（重設 order callback、行情訂閱等）
             for cb in self._on_reconnect_callbacks:
                 try:
                     cb()
                 except Exception as e:
                     logger.error(f"重連回呼執行失敗: {e}")
+            
+            # 7. 重啟自動重連監控
+            self.start_auto_reconnect()
             
             logger.info("重連成功（已觸發回呼）")
             return True

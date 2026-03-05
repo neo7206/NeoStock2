@@ -5,6 +5,7 @@ NeoStock2 策略 — 策略排程與執行引擎
 - 管理多策略的生命週期
 - 將行情數據分發給策略
 - 收集策略訊號並執行下單
+- 策略配置持久化（自動存檔/載入）
 """
 
 import json
@@ -22,15 +23,28 @@ from strategies.builtin.sma_crossover import SMACrossoverStrategy
 from strategies.builtin.rsi_reversal import RSIReversalStrategy
 from strategies.builtin.macd_signal import MACDSignalStrategy
 from strategies.builtin.bollinger_band import BollingerBandStrategy
+from strategies.builtin.swing_adapter import (
+    SwingTrendMAStrategy,
+    SwingBreakoutStrategy,
+    SwingPullbackStrategy,
+    SwingMACDStrategy,
+)
+from strategies.persistence import save_strategies, load_strategies
 
 logger = logging.getLogger("neostock2.strategies.strategy_engine")
 
-# 可用策略的註冊表（內建 + 自動描掃）
+# 可用策略的註冊表（內建 + 跨日波段 + 自動描掃）
 STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
+    # 盤中即時策略
     "sma_crossover": SMACrossoverStrategy,
     "rsi_reversal": RSIReversalStrategy,
     "macd_signal": MACDSignalStrategy,
     "bollinger_band": BollingerBandStrategy,
+    # 跨日波段策略
+    "swing_trend_ma": SwingTrendMAStrategy,
+    "swing_breakout": SwingBreakoutStrategy,
+    "swing_pullback": SwingPullbackStrategy,
+    "swing_macd": SwingMACDStrategy,
 }
 
 
@@ -89,10 +103,12 @@ class StrategyEngine:
         self._settings = settings or {}
 
         self._strategies: dict[str, BaseStrategy] = {}  # name -> strategy
+        self._strategy_types: dict[str, str] = {}  # name -> strategy_type key
         self._enabled: dict[str, bool] = {}
         self._signal_callbacks: list[Callable] = []
         self._running = False
         self._lock = threading.Lock()
+        self.position_sizer = None  # 由 main.py 注入
 
     def register_strategy(
         self,
@@ -126,9 +142,11 @@ class StrategyEngine:
 
         with self._lock:
             self._strategies[name] = strategy
+            self._strategy_types[name] = strategy_type
             self._enabled[name] = enabled
 
         logger.info(f"策略已註冊: [{name}] ({strategy_type}), 啟用={enabled}")
+        self._auto_save()
         return True
 
     def enable_strategy(self, name: str) -> bool:
@@ -137,6 +155,7 @@ class StrategyEngine:
             if name in self._strategies:
                 self._enabled[name] = True
                 logger.info(f"策略已啟用: [{name}]")
+                self._auto_save()
                 return True
         return False
 
@@ -146,6 +165,7 @@ class StrategyEngine:
             if name in self._strategies:
                 self._enabled[name] = False
                 logger.info(f"策略已停用: [{name}]")
+                self._auto_save()
                 return True
         return False
 
@@ -154,8 +174,10 @@ class StrategyEngine:
         with self._lock:
             if name in self._strategies:
                 del self._strategies[name]
+                self._strategy_types.pop(name, None)
                 del self._enabled[name]
                 logger.info(f"策略已移除: [{name}]")
+                self._auto_save()
                 return True
         return False
 
@@ -215,6 +237,27 @@ class StrategyEngine:
             lot_size = strategy_params.get("lot_size", 1)
             signal.quantity = int(lot_size)
 
+        # === 部位管理器自動計算買入數量 ===
+        if signal.action == SignalAction.BUY and self.position_sizer and self.portfolio:
+            try:
+                summary = self.portfolio.get_portfolio_summary()
+                account_value = summary.get("total_asset", 0)
+                stop_loss_pct = strategy_params.get("stop_loss_pct", 0.05)
+                if account_value > 0 and signal.price > 0:
+                    suggested = self.position_sizer.calculate(
+                        account_value=account_value,
+                        price=signal.price,
+                        stop_loss_pct=stop_loss_pct,
+                    )
+                    if suggested > signal.quantity:
+                        logger.info(
+                            f"📐 部位管理器調整: {signal.symbol} "
+                            f"{signal.quantity}張 → {suggested}張"
+                        )
+                        signal.quantity = suggested
+            except Exception as e:
+                logger.warning(f"部位管理器計算失敗: {e}")
+
         logger.info(
             f"📊 訊號: [{signal.strategy_name}] "
             f"{signal.action.value} {signal.symbol} "
@@ -267,15 +310,10 @@ class StrategyEngine:
                 quantity=signal.quantity,
                 price=signal.price,
                 price_type=order_type,
+                strategy_name=signal.strategy_name,
             )
 
             if result.get("success"):
-                # 將策略名稱附加到 order 快取，供成交回呼用
-                order_id = result.get("order_id", "")
-                if order_id and hasattr(self.order_manager, '_orders'):
-                    with self.order_manager._lock:
-                        if order_id in self.order_manager._orders:
-                            self.order_manager._orders[order_id]["strategy_name"] = signal.strategy_name
                 logger.info(f"✅ 策略下單成功: {signal.symbol} {signal.action.value} {signal.quantity}張")
             else:
                 logger.error(f"下單失敗: {result.get('error', '未知錯誤')}")
@@ -287,6 +325,7 @@ class StrategyEngine:
             for name, strategy in self._strategies.items():
                 info = strategy.get_info()
                 info["enabled"] = self._enabled.get(name, False)
+                info["strategy_type"] = self._strategy_types.get(name, "")
                 result.append(info)
             return result
 
@@ -333,3 +372,134 @@ class StrategyEngine:
         STRATEGY_REGISTRY.update(new)
         logger.info(f"策略熱重載完成，目前共 {len(STRATEGY_REGISTRY)} 個策略")
         return len(STRATEGY_REGISTRY)
+
+    # === 盤前自動掃描 ===
+
+    def run_daily_scan(self, market_data=None):
+        """
+        盤前自動掃描：遍歷所有啟用的策略，
+        取每檔標的近 60 天 K 棒，呼叫 on_bar() 檢查訊號。
+        
+        用途：讓跨日波段策略（Swing）能在盤前根據昨日 K 棒自動產生訊號。
+        
+        Args:
+            market_data: MarketDataManager 實例（用於取 K 棒）
+        """
+        md = market_data or getattr(self, '_market_data', None)
+        if md is None:
+            logger.warning("run_daily_scan: 無 market_data 模組，跳過")
+            return
+
+        from datetime import date, timedelta
+        end_str = date.today().isoformat()
+        start_str = (date.today() - timedelta(days=90)).isoformat()
+
+        with self._lock:
+            active = [
+                (name, strat)
+                for name, strat in self._strategies.items()
+                if self._enabled.get(name, False)
+            ]
+
+        if not active:
+            logger.info("📋 盤前掃描：無啟用策略，跳過")
+            return
+
+        logger.info(f"📋 盤前掃描開始：{len(active)} 個策略")
+        signal_count = 0
+
+        # 收集所有需要查詢的標的（去重）
+        all_symbols = set()
+        for _, strategy in active:
+            all_symbols.update(strategy.symbols)
+
+        # 批量取 K 棒（每檔只查一次）
+        kbar_cache: dict = {}
+        for symbol in all_symbols:
+            try:
+                df = md.get_kbars(symbol, start=start_str, end=end_str)
+                if not df.empty:
+                    kbar_cache[symbol] = df
+                    logger.debug(f"  取得 {symbol} K 棒: {len(df)} 根")
+                else:
+                    logger.warning(f"  {symbol} 無 K 棒資料")
+            except Exception as e:
+                logger.error(f"  取得 {symbol} K 棒失敗: {e}")
+
+        # 遍歷每個策略 × 每檔標的
+        for name, strategy in active:
+            for symbol in strategy.symbols:
+                bars = kbar_cache.get(symbol)
+                if bars is None or bars.empty:
+                    continue
+                try:
+                    signal = strategy.on_bar(symbol, bars)
+                    if signal:
+                        signal_count += 1
+                        logger.info(
+                            f"🔔 盤前訊號: [{name}] "
+                            f"{signal.action.value} {signal.symbol} "
+                            f"@ {signal.price} ({signal.reason})"
+                        )
+                        self._handle_signal(signal)
+                except Exception as e:
+                    logger.error(f"策略 [{name}] 盤前掃描 {symbol} 錯誤: {e}")
+
+        logger.info(f"📋 盤前掃描完成：產生 {signal_count} 個訊號")
+
+    # === 持久化 ===
+
+    def _auto_save(self):
+        """自動存檔策略配置（lock 內複製資料，lock 外寫入磁碟）"""
+        try:
+            with self._lock:
+                infos = []
+                for name, strategy in self._strategies.items():
+                    infos.append({
+                        "name": name,
+                        "strategy_type": self._strategy_types.get(name, ""),
+                        "symbols": list(strategy.symbols),
+                        "params": dict(strategy.params),
+                        "enabled": self._enabled.get(name, False),
+                    })
+            # lock 外寫入磁碟，避免死鎖
+            save_strategies(infos)
+        except Exception as e:
+            logger.error(f"策略自動存檔失敗: {e}")
+
+    def load_saved_strategies(self) -> int:
+        """
+        從磁碟載入上次儲存的策略配置
+
+        Returns:
+            成功載入的策略數量
+        """
+        saved = load_strategies()
+        count = 0
+        for cfg in saved:
+            name = cfg.get("name", "")
+            strategy_type = cfg.get("strategy_type", "")
+            symbols = cfg.get("symbols", [])
+            params = cfg.get("params", {})
+            enabled = cfg.get("enabled", False)
+
+            if not name or not strategy_type:
+                logger.warning(f"跳過無效策略配置: {cfg}")
+                continue
+
+            if strategy_type not in STRATEGY_REGISTRY:
+                logger.warning(f"跳過未知策略類型: {strategy_type}")
+                continue
+
+            success = self.register_strategy(
+                name=name,
+                strategy_type=strategy_type,
+                symbols=symbols,
+                params=params,
+                enabled=enabled,
+            )
+            if success:
+                count += 1
+
+        logger.info(f"✅ 從磁碟載入 {count}/{len(saved)} 個策略")
+        return count

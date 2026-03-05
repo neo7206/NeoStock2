@@ -114,7 +114,9 @@ async def update_system_settings(settings: SystemSettings):
         with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
             yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
-        # 同步更新記憶體中的設定
+        # 同步更新記憶體中的設定 dict
+        # TODO: 各模組（RiskManager, Portfolio 等）在 __init__ 時已將設定讀入成員變數，
+        #       修改此處 dict 不會即時反映到這些模組。若需熱更新，需通知各模組重讀設定。
         current = app_state.get("settings")
         if current and isinstance(current, dict):
             current.update(cfg)

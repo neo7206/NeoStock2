@@ -43,8 +43,8 @@ class ROICalculator:
 
             trades = query.order_by(Trade.created_at).all()
 
-            # 使用先進先出法 (FIFO) 計算已實現損益
-            buy_queue: dict[str, list] = {}  # code -> [(price, qty, fee)]
+            # 使用先進先出法 (FIFO) 計算已實現損益（純價差）
+            buy_queue: dict[str, list] = {}  # code -> [(price, qty)]
             total_realized = 0
             total_fee = 0
             total_tax = 0
@@ -59,27 +59,19 @@ class ROICalculator:
                     buy_queue[trade.code].append({
                         "price": trade.price,
                         "quantity": trade.quantity,
-                        "fee_per_share": trade.fee / (trade.quantity * 1000)
-                        if trade.quantity > 0
-                        else 0,
                     })
 
                 elif trade.action == "Sell":
                     remaining = trade.quantity
                     sell_price = trade.price
-                    sell_fee = trade.fee
-                    sell_tax = trade.tax
 
                     queue = buy_queue.get(trade.code, [])
                     while remaining > 0 and queue:
                         buy = queue[0]
                         matched = min(remaining, buy["quantity"])
 
-                        # 成本 = 買入價 + 手續費
-                        cost_per_share = buy["price"] + buy["fee_per_share"]
-                        revenue_per_share = sell_price
-
-                        pnl = (revenue_per_share - cost_per_share) * matched * 1000
+                        # 純價差損益（不含手續費稅金）
+                        pnl = (sell_price - buy["price"]) * matched * 1000
                         total_realized += pnl
 
                         buy["quantity"] -= matched
@@ -89,11 +81,12 @@ class ROICalculator:
                         if buy["quantity"] <= 0:
                             queue.pop(0)
 
-                    # 扣除賣出方的費用
-                    total_realized -= sell_fee + sell_tax
+            # 已實現損益 = 純價差 - 所有交易成本
+            net_realized = total_realized - total_fee - total_tax
 
             return {
-                "total_realized_pnl": round(total_realized, 2),
+                "total_realized_pnl": round(net_realized, 2),
+                "gross_realized_pnl": round(total_realized, 2),
                 "total_fee": round(total_fee, 2),
                 "total_tax": round(total_tax, 2),
                 "total_costs": round(total_fee + total_tax, 2),

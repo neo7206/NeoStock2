@@ -297,10 +297,10 @@ class Portfolio:
                 if current_price <= 0:
                     current_price = p.current_price
                 
-                # 計算該持倉市值與損益
+                # 計算該持倉市值與損益（用 avg_cost 重算，與 get_positions() 保持一致）
                 # quantity 是張數，所以 * 1000
                 mkt_val = current_price * p.quantity * 1000
-                cost = p.total_cost
+                cost = p.avg_cost * p.quantity * 1000  # 用 avg_cost 重算，而非 DB 的 total_cost
                 unrealized = mkt_val - cost
                 
                 total_cost += cost
@@ -355,7 +355,7 @@ class Portfolio:
                 existing.total_asset = cash + summary["total_market_value"]
                 existing.cash = cash
                 existing.market_value = summary["total_market_value"]
-                existing.realized_pnl = summary["realized_pnl"]
+                existing.realized_pnl = summary["total_realized_pnl"]
                 existing.unrealized_pnl = summary["total_unrealized_pnl"]
                 existing.total_fee = summary["total_fee"]
                 existing.total_tax = summary["total_tax"]
@@ -367,7 +367,7 @@ class Portfolio:
                 total_asset=cash + summary["total_market_value"],
                 cash=cash,
                 market_value=summary["total_market_value"],
-                realized_pnl=summary["realized_pnl"],
+                realized_pnl=summary["total_realized_pnl"],
                 unrealized_pnl=summary["total_unrealized_pnl"],
                 total_fee=summary["total_fee"],
                 total_tax=summary["total_tax"],

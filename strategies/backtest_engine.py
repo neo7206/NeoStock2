@@ -222,7 +222,7 @@ class BacktestEngine:
         # --- 回測結束: 強制平倉 ---
         final_price = float(df.iloc[-1]['Close'])
         if position > 0:
-             self._execute_exit(trades, active_trade, df.index[-1].isoformat(), final_price, symbol, "End of Backtest", cash, float(position))
+             self._execute_exit(trades, active_trade, df.index[-1], final_price, symbol, "End of Backtest", cash, float(position))
              revenue = final_price * position
              cash += revenue
              position = 0
@@ -266,16 +266,19 @@ class BacktestEngine:
             "debug": debug_info
         }
 
-    def _execute_exit(self, trades, active_trade, exit_time_iso, exit_price, symbol, reason, cash, position):
+    def _execute_exit(self, trades, active_trade, exit_time, exit_price, symbol, reason, cash, position):
         entry_price = active_trade["entry_price"]
         gross_pnl = (exit_price - entry_price) * position
+
+        # 統一 exit_time 為 isoformat 字串
+        exit_time_str = exit_time.isoformat() if hasattr(exit_time, "isoformat") else str(exit_time)
         
         # 暫時使用 Gross PnL
         net_pnl = gross_pnl 
         
         trades.append({
             "entry_time": active_trade["entry_time"],
-            "exit_time": exit_time_iso,
+            "exit_time": exit_time_str,
             "symbol": symbol,
             "action": "Sell", 
             "reason": reason,

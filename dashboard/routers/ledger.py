@@ -123,3 +123,17 @@ async def get_snapshots(limit: int = Query(30, ge=1, le=365)):
     if portfolio is None:
         return {"data": []}
     return {"data": portfolio.get_snapshots(limit=limit)}
+
+
+@router.get("/performance")
+async def get_performance(days: int = Query(30, ge=1, le=365)):
+    """取得策略績效報告"""
+    db = app_state.get("db")
+    if db is None:
+        return {"data": {}}
+    try:
+        from ledger.performance_report import PerformanceReport
+        report = PerformanceReport(db)
+        return {"data": report.generate(days=days)}
+    except Exception as e:
+        return {"data": {}, "error": str(e)}

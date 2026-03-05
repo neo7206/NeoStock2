@@ -75,7 +75,7 @@ class HistoryDataManager:
             s_str = current_date.strftime("%Y-%m-%d")
             e_str = chunk_end_date.strftime("%Y-%m-%d")
             
-            logger.info(f"抓取區間不用: {symbol} [{s_str} ~ {e_str}]")
+            logger.info(f"抓取區間: {symbol} [{s_str} ~ {e_str}]")
             
             try:
                 # 1. Fetch data

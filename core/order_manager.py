@@ -201,6 +201,28 @@ class OrderManager:
         status = "Filled"  # StockDeal 一定是成交
         status_msg = ""
 
+        # === 反查原始委託：deal 的 order_id 可能與下單時不同 ===
+        with self._lock:
+            if order_id and order_id not in self._orders:
+                # 嘗試根據 symbol + action 找到最近的待處理委託
+                matched_id = None
+                for oid, odata in self._orders.items():
+                    if (odata.get("symbol") == symbol
+                        and odata.get("action") == action
+                        and odata.get("status") in [
+                            "PendingSubmit", "PreSubmitted",
+                            "Submitted", "submitted", ""
+                        ]):
+                        matched_id = oid
+                        break  # 取第一筆匹配的
+
+                if matched_id:
+                    logger.info(
+                        f"🔗 成交回報 order_id 反查: "
+                        f"{order_id} → {matched_id} ({symbol} {action})"
+                    )
+                    order_id = matched_id
+
         self._update_order_cache(order_id, symbol, action, price, quantity, status, status_msg)
 
     def _handle_legacy_event(self, order_state, msg):
@@ -335,6 +357,48 @@ class OrderManager:
         """注入風控管理器（下單前強制檢查用）"""
         self._risk_manager = risk_manager
 
+    @staticmethod
+    def _align_tick_size(price: float, action: str = "Buy") -> float:
+        """
+        將價格對齊到台股合法的升降單位
+
+        台股升降單位規則：
+        - < 10:      0.01
+        - 10~50:     0.05
+        - 50~100:    0.10
+        - 100~500:   0.50
+        - 500~1000:  1.00
+        - >= 1000:   5.00
+
+        Args:
+            price: 原始價格
+            action: 'Buy' 無條件進位 / 'Sell' 無條件捨去
+        """
+        import math
+        if price <= 0:
+            return price
+
+        if price < 10:
+            tick = 0.01
+        elif price < 50:
+            tick = 0.05
+        elif price < 100:
+            tick = 0.10
+        elif price < 500:
+            tick = 0.50
+        elif price < 1000:
+            tick = 1.00
+        else:
+            tick = 5.00
+
+        # 買入進位、賣出捨去（對交易者有利）
+        if action == "Buy":
+            aligned = math.ceil(price / tick) * tick
+        else:
+            aligned = math.floor(price / tick) * tick
+
+        return round(aligned, 2)
+
     def place_order(
         self,
         symbol: str,
@@ -389,7 +453,7 @@ class OrderManager:
         # --- 零股/整股自動判斷 ---
         if order_lot is None:
             if quantity < 1:
-                order_lot = strategy_cfg.get("default_order_lot", "Common")
+                order_lot = "Odd"  # 零股
             else:
                 order_lot = "Common"
 
@@ -398,9 +462,11 @@ class OrderManager:
             bidask = self._market_data.get_latest_bidask(symbol)
             if bidask:
                 if action == "Buy":
-                    price = getattr(bidask, "ask_price", [0])[0] if hasattr(bidask, "ask_price") else 0
+                    ask_prices = bidask.get("ask_price", [0])
+                    price = ask_prices[0] if ask_prices else 0
                 else:
-                    price = getattr(bidask, "bid_price", [0])[0] if hasattr(bidask, "bid_price") else 0
+                    bid_prices = bidask.get("bid_price", [0])
+                    price = bid_prices[0] if bid_prices else 0
                 if price > 0:
                     price_type = "LMT"
                     logger.info(f"五檔定價: {symbol} {action} @ {price}")
@@ -413,9 +479,11 @@ class OrderManager:
                 bidask = self._market_data.get_latest_bidask(symbol)
                 if bidask:
                     if action == "Buy":
-                        price = getattr(bidask, "ask_price", [0])[0] if hasattr(bidask, "ask_price") else 0
+                        ask_prices = bidask.get("ask_price", [0])
+                        price = ask_prices[0] if ask_prices else 0
                     else:
-                        price = getattr(bidask, "bid_price", [0])[0] if hasattr(bidask, "bid_price") else 0
+                        bid_prices = bidask.get("bid_price", [0])
+                        price = bid_prices[0] if bid_prices else 0
                     if price > 0:
                         price_type = "LMT"
                         logger.info(f"尾盤自動改限價: {symbol} @ {price}")
@@ -423,6 +491,13 @@ class OrderManager:
         # 市價單不需要價格
         if price_type == "MKT":
             price = 0
+
+        # --- 價格對齊台股升降單位 ---
+        if price_type == "LMT" and price > 0:
+            aligned = self._align_tick_size(price, action)
+            if aligned != price:
+                logger.info(f"🔧 價格對齊升降單位: {symbol} {price} → {aligned}")
+                price = aligned
 
         # --- 批次拆單 ---
         batch_size = trading_cfg.get("batch_size", 5)
@@ -549,7 +624,7 @@ class OrderManager:
 
     def update_status(self) -> list[dict]:
         """
-        更新所有委託狀態
+        更新所有委託狀態（從 broker API 同步到本地 cache）
 
         Returns:
             目前所有委託列表
@@ -558,24 +633,11 @@ class OrderManager:
             self.client.api.update_status(self.client.api.stock_account)
             trades = self.client.api.list_trades()
             result = []
-            
-            with self._lock:
-                orders_map = self._orders.copy()
 
             for trade in trades:
                 order_id = trade.order.id
                 status = self._clean_enum(trade.status.status)
                 msg = trade.status.msg if hasattr(trade.status, "msg") else ""
-                
-                # 若本地緩存有更新的狀態，優先使用
-                if order_id in orders_map:
-                    local_data = orders_map[order_id]
-                    local_status = local_data.get("status")
-                    
-                    # 若 API 狀態為 Pending/PreSubmitted，但本地已是最終狀態，則覆蓋
-                    if status in ["PendingSubmit", "PreSubmitted"] and local_status and local_status not in ["PendingSubmit", "PreSubmitted", ""]:
-                        status = local_status
-                        msg = local_data.get("msg", msg)
 
                 trade_info = {
                     "order_id": order_id,
@@ -585,9 +647,46 @@ class OrderManager:
                     "quantity": trade.order.quantity,
                     "status": status,
                     "msg": msg,
-                    "timestamp": datetime.now().isoformat(), 
+                    "timestamp": datetime.now().isoformat(),
                 }
+
+                # === 同步到本地 cache ===
+                with self._lock:
+                    existing = self._orders.get(order_id)
+                    if existing:
+                        local_status = existing.get("status", "")
+                        # 優先使用較「終結」的狀態
+                        # 若本地已是 Filled/Cancelled/Failed，保留本地狀態
+                        final_states = {"Filled", "Cancelled", "Failed"}
+                        if local_status in final_states:
+                            trade_info["status"] = local_status
+                            trade_info["msg"] = existing.get("msg", msg)
+                        elif status in final_states:
+                            # API 回傳終結狀態 → 更新本地
+                            pass  # 使用 API 狀態
+                        elif local_status and status in ["PendingSubmit", "PreSubmitted"]:
+                            # API 還很早期，用本地較新的狀態
+                            trade_info["status"] = local_status
+                            trade_info["msg"] = existing.get("msg", msg)
+
+                        # 保留策略名稱
+                        if existing.get("strategy_name"):
+                            trade_info["strategy_name"] = existing["strategy_name"]
+
+                    # 寫回 cache
+                    self._orders[order_id] = trade_info
+
                 result.append(trade_info)
+
+            # === 處理不在 API 結果中的本地 cache 條目 ===
+            # (可能是 StockDeal 回報用了不同 order_id 寫入的條目)
+            api_order_ids = {t.order.id for t in trades}
+            with self._lock:
+                for oid, odata in list(self._orders.items()):
+                    if oid and oid not in api_order_ids:
+                        # 本地有但 API 沒有的條目也要顯示
+                        result.append(odata)
+
             return result
         except Exception as e:
             # 連線不穩時避免刷屏：每 5 分鐘才記一次 warning

@@ -13,33 +13,9 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta, date
-from typing import Callable
+from typing import Callable, Optional
 
 logger = logging.getLogger("neostock2.core.scheduler")
-
-# 台灣股市固定假日（每年更新）
-TW_HOLIDAYS_2026 = {
-    date(2026, 1, 1),   # 元旦
-    date(2026, 1, 2),   # 元旦補假
-    date(2026, 2, 14),  # 除夕前一日（調整放假）
-    date(2026, 2, 15),  # 除夕
-    date(2026, 2, 16),  # 春節
-    date(2026, 2, 17),  # 春節
-    date(2026, 2, 18),  # 春節
-    date(2026, 2, 19),  # 春節
-    date(2026, 2, 20),  # 春節
-    date(2026, 2, 28),  # 和平紀念日
-    date(2026, 3, 27),  # 兒童節（調整放假）
-    date(2026, 4, 3),   # 歡感節
-    date(2026, 4, 4),   # 兒童節
-    date(2026, 4, 5),   # 清明節
-    date(2026, 5, 1),   # 勞動節
-    date(2026, 5, 31),  # 端午節
-    date(2026, 6, 1),   # 端午節補假
-    date(2026, 10, 1),  # 中秋節
-    date(2026, 10, 2),  # 中秋節補假
-    date(2026, 10, 10), # 國慶日
-}
 
 
 class MarketScheduler:
@@ -54,18 +30,24 @@ class MarketScheduler:
         "post_market": "14:00",
     }
 
-    def __init__(self, settings: dict = None):
+    def __init__(self, settings: dict = None, market_data=None):
         self._settings = settings or {}
         self._phases = self._settings.get("scheduler", {}).get("phases", self.DEFAULT_PHASES)
         self._callbacks: dict[str, list[Callable]] = {
             "pre_market": [],
             "market_open": [],
+            "sim_trade_end": [],
             "market_close": [],
             "post_market": [],
         }
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._running = False
+
+        # 動態交易日判斷（透過 API 查 2330）
+        self._market_data = market_data
+        self._trading_day_cache: Optional[bool] = None
+        self._trading_day_cache_date: Optional[date] = None
 
     def on(self, phase: str, callback: Callable):
         """
@@ -93,13 +75,70 @@ class MarketScheduler:
         return open_time <= now < close_time
 
     def is_trading_day(self) -> bool:
-        """判斷今天是否為交易日（排除週末和國定假日）"""
-        today = datetime.now()
-        if today.weekday() >= 5:  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+        """
+        判斷今天是否為交易日（動態判斷，不依賴硬編碼假日表）
+
+        策略：
+        1. 週末直接回 False（無需打 API）
+        2. 平日透過 API 查 2330 K 棒判斷（結果每日快取）
+        3. API 不可用時 fallback 為只判斷週末
+        """
+        today = datetime.now().date()
+
+        # 週末一定不是交易日
+        if today.weekday() >= 5:
             return False
-        if today.date() in TW_HOLIDAYS_2026:
-            return False
-        return True
+
+        # 檢查快取（同一天只查一次 API）
+        if self._trading_day_cache_date == today and self._trading_day_cache is not None:
+            return self._trading_day_cache
+
+        # 透過 API 動態判斷
+        result = self._check_trading_day_via_api(today)
+        self._trading_day_cache = result
+        self._trading_day_cache_date = today
+        return result
+
+    def _check_trading_day_via_api(self, today: date) -> bool:
+        """
+        透過 Shioaji API 查 2330 近 7 天 K 棒來判斷今天是否為交易日。
+        
+        邏輯：
+        - 盤前 (< 09:00)：K 棒尚未產生，一律視為交易日（讓 pre_market 回呼先跑）
+        - 盤中/盤後 (>= 09:00)：若今天有 K 棒 → 交易日；否則 → 假日
+        - API 失敗時 fallback 視為交易日（避免因網路問題漏掉排程）
+        """
+        if self._market_data is None:
+            logger.debug("無 market_data 模組，使用 fallback（僅排除週末）")
+            return True
+
+        now = datetime.now()
+
+        # 盤前（09:00 之前）：K 棒要開盤後才有，無法確認，一律視為交易日
+        if now.hour < 9:
+            return True
+
+        try:
+            end_str = today.isoformat()
+            start_str = (today - timedelta(days=7)).isoformat()
+            df = self._market_data.get_kbars("2330", start=start_str, end=end_str)
+
+            if df.empty:
+                logger.warning("查詢 2330 K 棒無資料，假設為非交易日")
+                return False
+
+            latest_date = df.index.max().date()
+
+            if latest_date == today:
+                logger.info(f"✅ 確認今天 ({today}) 為交易日（2330 有 K 棒）")
+                return True
+            else:
+                logger.info(f"⛔ 今天 ({today}) 非交易日（最後 K 棒: {latest_date}）")
+                return False
+
+        except Exception as e:
+            logger.warning(f"API 查詢交易日失敗: {e}，fallback 視為交易日")
+            return True
 
     def is_weekday(self) -> bool:
         """判斷今天是否為工作日（排除週六日，向下相容）"""
@@ -139,14 +178,16 @@ class MarketScheduler:
             now_time = now.strftime("%H:%M")
             today = now.date()
 
-            # 日期變更 → 重置觸發記錄
+            # 日期變更 → 重置觸發記錄 + 清除交易日快取
             if today != last_date:
                 triggered_today.clear()
+                self._trading_day_cache = None
+                self._trading_day_cache_date = None
                 last_date = today
                 logger.info(f"新的交易日: {today}")
 
-            # 只在工作日執行
-            if self.is_weekday():
+            # 只在交易日執行
+            if self.is_trading_day():
                 for phase, target_time in self._phases.items():
                     if phase in self._callbacks and phase not in triggered_today:
                         if now_time >= target_time:
@@ -171,8 +212,8 @@ class MarketScheduler:
         now = datetime.now()
         return {
             "running": self._running,
+            "is_trading_day": self.is_trading_day(),
             "is_trading_hours": self.is_trading_hours(),
-            "is_weekday": self.is_weekday(),
             "current_time": now.strftime("%H:%M:%S"),
             "phases": self._phases,
             "registered_callbacks": {

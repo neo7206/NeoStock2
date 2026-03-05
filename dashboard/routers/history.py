@@ -22,25 +22,46 @@ async def get_history_status():
         raise HTTPException(status_code=503, detail="History Manager not initialized")
     
     manager = app_state["history_manager"]
-    symbols = manager.get_watchlist_symbols()
     
-    # 這裡我們需要 symbol 對應的 name，目前 Watchlist table 有 name
-    # 我們改用 session 查 Watchlist 比較快
     session = manager.db.get_session()
-    from ledger.models import Watchlist
-    watchlist = session.query(Watchlist).order_by(Watchlist.sort_order).all()
-    session.close()
+    from ledger.models import Watchlist, MarketData
+    from sqlalchemy import func
+    try:
+        watchlist = session.query(Watchlist).order_by(Watchlist.sort_order).all()
+        symbols = [w.symbol for w in watchlist]
+        name_map = {w.symbol: w.name for w in watchlist}
+        
+        if not symbols:
+            return []
+        
+        # 批量查詢所有 symbol 的歷史統計（避免 N+1）
+        stats = session.query(
+            MarketData.symbol,
+            func.min(MarketData.datetime),
+            func.max(MarketData.datetime),
+            func.count(MarketData.id)
+        ).filter(
+            MarketData.symbol.in_(symbols),
+            MarketData.timeframe == "1min"
+        ).group_by(MarketData.symbol).all()
+        
+        stat_map = {s[0]: {"start": s[1], "end": s[2], "count": s[3]} for s in stats}
+    finally:
+        session.close()
     
+    # 取得 last_trading_day（只查一次）
+    last_td = manager.get_last_trading_day().isoformat()
+
     result = []
-    for item in watchlist:
-        status = manager.get_history_status(item.symbol, timeframe="1min")
+    for sym in symbols:
+        s = stat_map.get(sym, {"start": None, "end": None, "count": 0})
         result.append(HistoryStatus(
-            symbol=item.symbol,
-            name=item.name,
-            count=status["count"],
-            start_date=status["start_date"],
-            end_date=status["end_date"],
-            last_trading_day=status["last_trading_day"],
+            symbol=sym,
+            name=name_map.get(sym, ""),
+            count=s["count"],
+            start_date=s["start"].isoformat() if s["start"] else None,
+            end_date=s["end"].isoformat() if s["end"] else None,
+            last_trading_day=last_td,
             timeframe="1min"
         ))
     return result

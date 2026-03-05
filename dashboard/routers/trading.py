@@ -55,6 +55,12 @@ async def update_orders():
     om = app_state.get("order_manager")
     if om is None:
         raise HTTPException(status_code=503, detail="交易服務未啟動")
+    
+    # 未登入時直接回傳本地快取，避免無效的 API 呼叫
+    client = app_state.get("api_client")
+    if not client or not client.is_logged_in:
+        return {"data": list(om.get_orders().values())}
+    
     orders = om.update_status()
     return {"data": orders}
 

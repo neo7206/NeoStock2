@@ -10,7 +10,7 @@ NeoStock2 核心 — 即時行情模組
 import logging
 import threading
 from datetime import datetime, date
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Callable
 
 import pandas as pd
@@ -33,7 +33,7 @@ class MarketDataManager:
         self._latest_ticks: dict[str, dict] = {}
         self._latest_bidasks: dict[str, dict] = {}
         self._quotes: dict[str, dict] = {}  # 整合的即時報價快取
-        self._tick_buffer: dict[str, list] = defaultdict(list)
+        self._tick_buffer: dict[str, deque] = defaultdict(lambda: deque(maxlen=500))
         self._lock = threading.Lock()
         self._is_callback_set = False
 
@@ -200,10 +200,10 @@ class MarketDataManager:
         result = []
         with self._lock:
             for s in symbols:
-                q = self._quotes.get(s, {})
+                q = self._quotes.get(s, {}).copy()  # 淺拷貝，避免外部修改內部快取
                 # 補個 code 避免前端壞掉
                 if "code" not in q:
-                     q["code"] = s
+                    q["code"] = s
                 result.append(q)
         return result
 

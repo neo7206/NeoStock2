@@ -176,3 +176,153 @@ async def run_backtest(req: BacktestRequest):
         raise HTTPException(status_code=400, detail=result["error"])
 
     return {"data": result}
+
+
+# ========== 預設策略套件 ==========
+
+@router.get("/presets")
+async def list_presets():
+    """取得可用的策略預設套件列表"""
+    from strategies.presets import get_presets
+    return {"data": get_presets()}
+
+
+@router.get("/presets/{preset_id}")
+async def get_preset(preset_id: str):
+    """取得預設套件詳情"""
+    from strategies.presets import get_preset_detail
+    detail = get_preset_detail(preset_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"找不到預設套件: {preset_id}")
+    return {"data": detail}
+
+
+class PresetApplyRequest(BaseModel):
+    symbols: list[str] = []  # 可選：自訂標的（覆蓋預設）
+
+
+@router.post("/presets/{preset_id}/apply")
+async def apply_preset(preset_id: str, req: PresetApplyRequest = None):
+    """一鍵套用預設策略套件"""
+    from strategies.presets import apply_preset as _apply_preset
+
+    engine = app_state.get("strategy_engine")
+    risk_manager = app_state.get("risk_manager")
+    if engine is None:
+        raise HTTPException(status_code=503, detail="策略引擎未啟動")
+
+    symbols_override = req.symbols if req and req.symbols else None
+    result = _apply_preset(
+        preset_id=preset_id,
+        strategy_engine=engine,
+        risk_manager=risk_manager,
+        symbols_override=symbols_override,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "套用失敗"))
+
+    return {"message": f"已套用 {result.get('preset_name', preset_id)}", "data": result}
+
+
+# ========== AutoGuardian 狀態 ==========
+
+@router.get("/guardian/status")
+async def guardian_status():
+    """取得 AutoGuardian 狀態"""
+    guardian = app_state.get("auto_guardian")
+    if guardian is None:
+        return {"data": {"running": False, "enabled": False}}
+    return {"data": guardian.get_status()}
+
+
+class GuardianToggleRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/guardian/toggle")
+async def guardian_toggle(req: GuardianToggleRequest):
+    """啟停 AutoGuardian"""
+    guardian = app_state.get("auto_guardian")
+    if guardian is None:
+        raise HTTPException(status_code=503, detail="AutoGuardian 未初始化")
+
+    if req.enabled:
+        guardian.start()
+        return {"message": "AutoGuardian 已啟動"}
+    else:
+        guardian.stop()
+        return {"message": "AutoGuardian 已停止"}
+
+
+# ========== 績效報告 ==========
+
+@router.get("/performance")
+async def get_performance(days: int = 30):
+    """取得績效歸因報告"""
+    perf = app_state.get("perf_report")
+    if perf is None:
+        raise HTTPException(status_code=503, detail="績效報告模組未初始化")
+    try:
+        report = perf.generate(days=days)
+        return {"data": report}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"產生報告失敗: {e}")
+
+
+# ========== 研究→實盤部署 ==========
+
+class DeployResearchRequest(BaseModel):
+    strategy_id: str        # research strategy ID (trend_ma, breakout, etc.)
+    symbol: str
+    params: dict = {}       # 最佳參數
+    name: str = ""          # 策略名稱（可選）
+    enabled: bool = True
+
+
+@router.post("/deploy_research")
+async def deploy_research(req: DeployResearchRequest):
+    """從研究結果一鍵部署策略到實盤"""
+    engine = app_state.get("strategy_engine")
+    if engine is None:
+        raise HTTPException(status_code=503, detail="策略引擎未啟動")
+
+    # 將研究策略 ID 對應到 swing adapter
+    adapter_map = {
+        "trend_ma": "swing_trend_ma",
+        "breakout": "swing_breakout",
+        "pullback": "swing_pullback",
+        "macd": "swing_macd",
+    }
+
+    strategy_type = adapter_map.get(req.strategy_id)
+    if not strategy_type:
+        raise HTTPException(
+            status_code=400,
+            detail=f"找不到對應的實盤策略: {req.strategy_id}"
+        )
+
+    name = req.name or f"研究部署_{req.strategy_id}_{req.symbol}"
+    success = engine.register_strategy(
+        name=name,
+        strategy_type=strategy_type,
+        symbols=[req.symbol],
+        params=req.params,
+        enabled=req.enabled,
+    )
+
+    if success:
+        return {"message": f"策略 [{name}] 已部署", "strategy_name": name}
+    raise HTTPException(status_code=400, detail="部署失敗")
+
+
+# ========== 部位管理器 ==========
+
+@router.get("/position_sizer")
+async def get_position_sizer_info():
+    """取得部位管理器設定"""
+    sizer = app_state.get("position_sizer")
+    if sizer is None:
+        return {"data": {"method": "disabled"}}
+    return {"data": sizer.get_info()}
+

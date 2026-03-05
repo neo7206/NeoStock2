@@ -3,7 +3,8 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session, scoped_session
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import QueuePool
+from sqlalchemy import event as sa_event
 
 from ledger.models import Base
 
@@ -31,8 +32,19 @@ class Database:
             f"sqlite:///{self.db_path}",
             echo=False,
             connect_args={"check_same_thread": False},
-            poolclass=StaticPool,  # SQLite 單連線池，避免多線程鎖定
+            poolclass=QueuePool,
+            pool_size=5,
+            max_overflow=10,
         )
+
+        # 啟用 SQLite WAL 模式 + 外鍵約束（每條連線都需要設定）
+        @sa_event.listens_for(self._engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")  # 等待 5s 避免 database is locked
+            cursor.close()
         Base.metadata.create_all(self._engine)
         self._session_factory = sessionmaker(bind=self._engine)
         self._scoped_session = scoped_session(self._session_factory)
